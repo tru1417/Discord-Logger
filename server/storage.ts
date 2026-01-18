@@ -1,38 +1,74 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import { db } from "./db";
+import {
+  logs, cases,
+  type Log, type InsertLog,
+  type Case, type InsertCase
+} from "@shared/schema";
+import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  // Logs
+  createLog(log: InsertLog): Promise<Log>;
+  getLogs(limit?: number): Promise<Log[]>;
+  getLogsByUser(userId: string): Promise<Log[]>;
+
+  // Cases
+  createCase(c: InsertCase): Promise<Case>;
+  getCases(limit?: number): Promise<Case[]>;
+  getCase(id: number): Promise<Case | undefined>;
+  getCasesByTarget(targetId: string): Promise<Case[]>;
+  
+  // Stats
+  getStats(): Promise<{ totalLogs: number; totalCases: number; recentActivity: Log[] }>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
+export class DatabaseStorage implements IStorage {
+  async createLog(log: InsertLog): Promise<Log> {
+    const [newLog] = await db.insert(logs).values(log).returning();
+    return newLog;
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+  async getLogs(limit = 50): Promise<Log[]> {
+    return await db.select().from(logs).orderBy(desc(logs.timestamp)).limit(limit);
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+  async getLogsByUser(userId: string): Promise<Log[]> {
+    return await db.select().from(logs)
+      .where(eq(logs.userId, userId))
+      .orderBy(desc(logs.timestamp));
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  async createCase(c: InsertCase): Promise<Case> {
+    const [newCase] = await db.insert(cases).values(c).returning();
+    return newCase;
+  }
+
+  async getCases(limit = 50): Promise<Case[]> {
+    return await db.select().from(cases).orderBy(desc(cases.timestamp)).limit(limit);
+  }
+
+  async getCase(id: number): Promise<Case | undefined> {
+    const [c] = await db.select().from(cases).where(eq(cases.id, id));
+    return c;
+  }
+
+  async getCasesByTarget(targetId: string): Promise<Case[]> {
+    return await db.select().from(cases)
+      .where(eq(cases.targetId, targetId))
+      .orderBy(desc(cases.timestamp));
+  }
+
+  async getStats(): Promise<{ totalLogs: number; totalCases: number; recentActivity: Log[] }> {
+    const logsCount = await db.select().from(logs); // Inefficient for large DBs, but fine for MVP
+    const casesCount = await db.select().from(cases);
+    const recent = await db.select().from(logs).orderBy(desc(logs.timestamp)).limit(5);
+
+    return {
+      totalLogs: logsCount.length,
+      totalCases: casesCount.length,
+      recentActivity: recent,
+    };
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
