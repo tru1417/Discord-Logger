@@ -1,3 +1,4 @@
+const discordToken = "MTMzMzI5MDQwOTQxNzUxMDk3Mg.GHN2FyZgmBUSUtEEgw3wvl9DiIlN8IkbEIYr4AFFFJ_E";
 import { useRules, useCreateRule, useDeleteRule } from "@/hooks/use-rules";
 import { PageHeader } from "@/components/PageHeader";
 import { Plus, Trash2, AlertOctagon } from "lucide-react";
