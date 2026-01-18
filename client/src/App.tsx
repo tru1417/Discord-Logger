@@ -10,19 +10,19 @@ import Dashboard from "@/pages/Dashboard";
 import Logs from "@/pages/Logs";
 import Cases from "@/pages/Cases";
 import Rules from "@/pages/Rules";
-import BotSettings from "@/pages/BotSettings";
+import Roles from "@/pages/Roles";
 
 function Router() {
   return (
-    <div className="flex min-h-screen bg-[#36393f] text-gray-100">
+    <div className="flex min-h-screen bg-[#36393f] text-gray-100 font-sans">
       <Sidebar />
-      <main className="flex-1 ml-72">
+      <main className="flex-1 ml-64 min-h-screen relative z-10">
         <Switch>
           <Route path="/" component={Dashboard} />
           <Route path="/logs" component={Logs} />
           <Route path="/cases" component={Cases} />
           <Route path="/rules" component={Rules} />
-          <Route path="/bot" component={BotSettings} />
+          <Route path="/roles" component={Roles} />
           <Route component={NotFound} />
         </Switch>
       </main>
