@@ -24,11 +24,23 @@ export const cases = pgTable("cases", {
   timestamp: timestamp("timestamp").defaultNow().notNull(),
 });
 
+export const rules = pgTable("rules", {
+  id: serial("id").primaryKey(),
+  content: text("content").notNull(), // The actual rule text
+  severity: text("severity").notNull(), // 'warn', 'kick', 'ban'
+  enabled: boolean("enabled").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertLogSchema = createInsertSchema(logs).omit({ id: true, timestamp: true });
 export const insertCaseSchema = createInsertSchema(cases).omit({ id: true, timestamp: true });
+export const insertRuleSchema = createInsertSchema(rules).omit({ id: true, createdAt: true });
 
 export type Log = typeof logs.$inferSelect;
 export type InsertLog = z.infer<typeof insertLogSchema>;
 
 export type Case = typeof cases.$inferSelect;
 export type InsertCase = z.infer<typeof insertCaseSchema>;
+
+export type Rule = typeof rules.$inferSelect;
+export type InsertRule = z.infer<typeof insertRuleSchema>;

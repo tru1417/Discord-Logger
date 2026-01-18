@@ -1,47 +1,46 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  /* Discord-inspired Dark Theme Palette */
+  /* Discord-inspired Palette */
+  --background: 223 7% 20%;      /* #36393f */
+  --foreground: 210 10% 98%;     /* #dcddde */
   
-  /* Backgrounds */
-  --background: 223 7% 20%;      /* #36393f - Main Chat Background */
-  --foreground: 210 20% 98%;      /* #dcddde - Main Text */
-  
-  --card: 220 7% 18%;            /* #2f3136 - Sidebar/Cards */
-  --card-foreground: 210 20% 98%;
+  --card: 220 8% 18%;            /* #2f3136 */
+  --card-foreground: 210 10% 98%;
 
-  --popover: 220 7% 18%;
-  --popover-foreground: 210 20% 98%;
+  --popover: 220 8% 18%;
+  --popover-foreground: 210 10% 98%;
 
-  /* Brand Colors */
-  --primary: 235 86% 65%;        /* #5865F2 - Blurple */
+  --primary: 235 86% 65%;        /* #5865F2 (Discord Blurple) */
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 223 7% 20%;       /* Secondary elements */
-  --secondary-foreground: 210 20% 98%;
+  --secondary: 223 7% 20%;       /* #36393f */
+  --secondary-foreground: 210 10% 98%;
 
-  --muted: 217 8% 26%;           /* #40444b */
+  --muted: 223 7% 20%;
   --muted-foreground: 216 4% 74%; /* #b9bbbe */
 
-  --accent: 217 8% 26%;          /* Hover states */
+  --accent: 235 86% 65%;
   --accent-foreground: 0 0% 100%;
 
-  /* Status Colors */
-  --destructive: 359 83% 59%;    /* #ED4245 - Red/Ban */
+  --destructive: 359 87% 59%;    /* #ed4245 */
   --destructive-foreground: 0 0% 100%;
-  
-  --success: 139 47% 65%;        /* #57F287 - Green/Join */
-  --warning: 48 96% 68%;         /* #FEE75C - Yellow/Warn */
 
   --border: 216 7% 14%;          /* #202225 */
   --input: 216 7% 14%;
   --ring: 235 86% 65%;
 
   --radius: 0.5rem;
+  
+  --sidebar-bg: 216 7% 14%;      /* #202225 */
+  --channel-list-bg: 220 8% 18%; /* #2f3136 */
+  
+  --success: 145 65% 39%;        /* #3ba55c */
+  --warning: 40 86% 57%;         /* #faa61a */
 }
 
 @layer base {
@@ -49,26 +48,40 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground antialiased selection:bg-primary/30;
+    @apply bg-[#36393f] text-gray-200 font-sans antialiased;
     font-family: 'Inter', sans-serif;
   }
   
-  /* Custom Scrollbar to match Discord */
+  /* Custom Scrollbar for Discord feel */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
-  }
-  ::-webkit-scrollbar-track {
     background-color: #2f3136;
-    border-radius: 4px;
   }
   ::-webkit-scrollbar-thumb {
     background-color: #202225;
     border-radius: 4px;
   }
+  ::-webkit-scrollbar-track {
+    background-color: #2f3136;
+  }
   
-  /* Monospace for logs/IDs */
-  code, .font-mono {
-    font-family: 'JetBrains Mono', monospace;
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-white font-bold tracking-tight;
+  }
+}
+
+/* Utilities for Discord-specific UI elements */
+@layer components {
+  .discord-card {
+    @apply bg-[#2f3136] rounded-lg p-4 border border-[#202225] shadow-sm hover:shadow-md transition-shadow duration-200;
+  }
+  
+  .discord-button {
+    @apply bg-[#5865F2] hover:bg-[#4752c4] text-white font-medium px-4 py-2 rounded transition-colors duration-200 active:translate-y-[1px];
+  }
+  
+  .discord-input {
+    @apply bg-[#202225] border-none text-gray-200 placeholder-gray-500 rounded p-2.5 focus:ring-2 focus:ring-[#5865F2] focus:outline-none transition-all;
   }
 }

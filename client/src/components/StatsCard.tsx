@@ -1,55 +1,53 @@
-import { LucideIcon } from "lucide-react";
+import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { motion } from "framer-motion";
 
 interface StatsCardProps {
   title: string;
   value: string | number;
-  icon: LucideIcon;
+  icon: ReactNode;
   trend?: string;
-  trendUp?: boolean;
-  className?: string;
-  color?: "primary" | "success" | "warning" | "destructive";
+  color?: "blue" | "green" | "red" | "orange";
 }
 
-export function StatsCard({ 
-  title, 
-  value, 
-  icon: Icon, 
-  trend, 
-  trendUp,
-  className,
-  color = "primary" 
-}: StatsCardProps) {
-  
-  const colors = {
-    primary: "bg-primary/10 text-primary",
-    success: "bg-[#57F287]/10 text-[#57F287]",
-    warning: "bg-[#FEE75C]/10 text-[#FEE75C]",
-    destructive: "bg-[#ED4245]/10 text-[#ED4245]",
+export function StatsCard({ title, value, icon, trend, color = "blue" }: StatsCardProps) {
+  const colorMap = {
+    blue: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+    green: "bg-green-500/10 text-green-500 border-green-500/20",
+    red: "bg-red-500/10 text-red-500 border-red-500/20",
+    orange: "bg-orange-500/10 text-orange-500 border-orange-500/20",
   };
 
   return (
-    <div className={cn(
-      "bg-[#2f3136] rounded-xl p-6 shadow-lg border border-[#202225] hover:border-primary/50 transition-colors duration-300",
-      className
-    )}>
-      <div className="flex justify-between items-start mb-4">
-        <div className={cn("p-3 rounded-lg", colors[color])}>
-          <Icon size={24} />
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="discord-card relative overflow-hidden group"
+    >
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm font-medium text-gray-400 mb-1">{title}</p>
+          <h3 className="text-3xl font-extrabold text-white">{value}</h3>
+          {trend && (
+            <p className="text-xs text-gray-500 mt-2 flex items-center">
+              <span className="text-green-400 font-medium mr-1">{trend}</span> vs last week
+            </p>
+          )}
         </div>
-        {trend && (
-          <span className={cn(
-            "text-xs font-medium px-2 py-1 rounded-full",
-            trendUp ? "text-[#57F287] bg-[#57F287]/10" : "text-[#ED4245] bg-[#ED4245]/10"
-          )}>
-            {trend}
-          </span>
-        )}
+        <div className={cn("p-3 rounded-lg border backdrop-blur-sm transition-transform group-hover:scale-110", colorMap[color])}>
+          {icon}
+        </div>
       </div>
-      <div>
-        <h3 className="text-muted-foreground font-medium text-sm uppercase tracking-wide">{title}</h3>
-        <p className="text-3xl font-bold text-white mt-1">{value}</p>
-      </div>
-    </div>
+      
+      {/* Decorative gradient blob */}
+      <div className={cn(
+        "absolute -bottom-10 -right-10 w-32 h-32 rounded-full blur-3xl opacity-20 pointer-events-none transition-opacity group-hover:opacity-30",
+        color === "blue" && "bg-blue-500",
+        color === "green" && "bg-green-500",
+        color === "red" && "bg-red-500",
+        color === "orange" && "bg-orange-500",
+      )} />
+    </motion.div>
   );
 }

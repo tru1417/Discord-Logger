@@ -1,8 +1,9 @@
 import { db } from "./db";
 import {
-  logs, cases,
+  logs, cases, rules,
   type Log, type InsertLog,
-  type Case, type InsertCase
+  type Case, type InsertCase,
+  type Rule, type InsertRule
 } from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
 
@@ -17,6 +18,11 @@ export interface IStorage {
   getCases(limit?: number): Promise<Case[]>;
   getCase(id: number): Promise<Case | undefined>;
   getCasesByTarget(targetId: string): Promise<Case[]>;
+
+  // Rules
+  createRule(r: InsertRule): Promise<Rule>;
+  getRules(): Promise<Rule[]>;
+  deleteRule(id: number): Promise<void>;
   
   // Stats
   getStats(): Promise<{ totalLogs: number; totalCases: number; recentActivity: Log[] }>;
@@ -58,8 +64,21 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(cases.timestamp));
   }
 
+  async createRule(r: InsertRule): Promise<Rule> {
+    const [newRule] = await db.insert(rules).values(r).returning();
+    return newRule;
+  }
+
+  async getRules(): Promise<Rule[]> {
+    return await db.select().from(rules).orderBy(desc(rules.createdAt));
+  }
+
+  async deleteRule(id: number): Promise<void> {
+    await db.delete(rules).where(eq(rules.id, id));
+  }
+
   async getStats(): Promise<{ totalLogs: number; totalCases: number; recentActivity: Log[] }> {
-    const logsCount = await db.select().from(logs); // Inefficient for large DBs, but fine for MVP
+    const logsCount = await db.select().from(logs);
     const casesCount = await db.select().from(cases);
     const recent = await db.select().from(logs).orderBy(desc(logs.timestamp)).limit(5);
 
