@@ -96,6 +96,49 @@ export async function registerRoutes(
     res.status(204).send();
   });
 
+  // Roles
+  app.get(api.roles.list.path, async (req, res) => {
+    const roles = await storage.getRoleConfigs();
+    res.json(roles);
+  });
+
+  app.post(api.roles.create.path, async (req, res) => {
+    try {
+      const input = api.roles.create.input.parse(req.body);
+      const role = await storage.createRoleConfig(input);
+      res.status(201).json(role);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({
+          message: err.errors[0].message,
+          field: err.errors[0].path.join('.'),
+        });
+      }
+      throw err;
+    }
+  });
+
+  app.put(api.roles.update.path, async (req, res) => {
+    try {
+      const input = api.roles.update.input.parse(req.body);
+      const role = await storage.updateRoleConfig(Number(req.params.id), input);
+      res.json(role);
+    } catch (err) {
+       if (err instanceof z.ZodError) {
+        return res.status(400).json({
+          message: err.errors[0].message,
+          field: err.errors[0].path.join('.'),
+        });
+      }
+      throw err;
+    }
+  });
+
+  app.delete(api.roles.delete.path, async (req, res) => {
+    await storage.deleteRoleConfig(Number(req.params.id));
+    res.status(204).send();
+  });
+
   // Stats
   app.get(api.stats.get.path, async (req, res) => {
     const stats = await storage.getStats();

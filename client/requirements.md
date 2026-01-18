@@ -1,12 +1,12 @@
 ## Packages
-framer-motion | Page transitions and list animations
-recharts | Analytics charts for dashboard
-date-fns | Formatting timestamps (e.g., "Today at 4:20 PM")
-clsx | Utility for conditional classes
-tailwind-merge | Utility for merging tailwind classes
+framer-motion | Smooth layout transitions and animations
+recharts | Analytics charts for dashboard stats
+clsx | Conditional class names
+tailwind-merge | Merging Tailwind classes safely
+date-fns | Date formatting for logs and cases
 lucide-react | Icons for the UI
 
 ## Notes
-The app mimics Discord's UI aesthetic (dark mode, specific colors).
-New "Rules" page added for managing server rules.
-Dashboard visualizes logs and cases.
+- Theme uses Discord-inspired colors (Blurple #5865F2, Dark Grays #36393f)
+- Layout mimics Discord client (sidebar left, main content right)
+- Role management requires JSON editor for permissions or simple toggles

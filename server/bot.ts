@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events, Partials, Message } from "discord.js";
+import { Client, GatewayIntentBits, Events, Partials, Message, PermissionsBitField } from "discord.js";
 import { storage } from "./storage";
 import { OpenAI } from "openai";
 
@@ -38,7 +38,6 @@ export function initializeBot() {
   // Log Message Deletions
   client.on(Events.MessageDelete, async (message) => {
     if (message.partial) {
-      // Try to fetch if partial, though content might be lost
       try {
         await message.fetch();
       } catch (e) {
@@ -46,7 +45,7 @@ export function initializeBot() {
       }
     }
 
-    if (message.author?.bot) return; // Ignore bots
+    if (message.author?.bot) return; 
 
     await storage.createLog({
       type: 'message_delete',
@@ -60,8 +59,9 @@ export function initializeBot() {
     });
   });
 
-  // Log Member Joins
+  // Log Member Joins + Auto Role Assignment
   client.on(Events.GuildMemberAdd, async (member) => {
+    // Log join
     await storage.createLog({
       type: 'member_join',
       content: `User ${member.user.tag} joined the server.`,
@@ -71,6 +71,28 @@ export function initializeBot() {
         guildId: member.guild.id,
       },
     });
+
+    // Auto Role Assignment
+    try {
+      const roleConfigs = await storage.getRoleConfigs();
+      const autoRoles = roleConfigs.filter(r => r.isAutoRole);
+      
+      for (const config of autoRoles) {
+        const role = member.guild.roles.cache.get(config.roleId);
+        if (role) {
+          await member.roles.add(role);
+          await storage.createLog({
+            type: 'auto_role',
+            content: `Assigned auto-role ${role.name} to ${member.user.tag}`,
+            userId: member.id,
+            username: member.user.tag,
+            metadata: { roleId: role.id, guildId: member.guild.id },
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error assigning auto roles:", error);
+    }
   });
 
   // Handle messages (Commands + AutoMod)
@@ -96,9 +118,38 @@ export function initializeBot() {
 async function handleCommand(message: Message) {
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
-
-  // Check permissions (simple check: must have Kick/Ban perms)
   
+  // --- Admin Commands ---
+  
+  // Sync Permissions (Apply role permissions based on DB config)
+  if (command === 'syncperms') {
+    if (!message.member?.permissions.has('Administrator')) return;
+    
+    try {
+      const roleConfigs = await storage.getRoleConfigs();
+      const guild = message.guild;
+      if (!guild) return;
+
+      let count = 0;
+      for (const config of roleConfigs) {
+        const role = guild.roles.cache.get(config.roleId);
+        if (role && config.permissions) {
+          // Note: Real permission syncing is complex. 
+          // For MVP, we'll just log that we would sync them or maybe set a few basic ones if specified.
+          // Setting actual Discord permissions requires converting DB permissions json to bitfield.
+          // This is a placeholder for that logic.
+          count++;
+        }
+      }
+      message.reply(`Synced permissions for ${count} roles (Simulated).`);
+    } catch (error) {
+      console.error(error);
+      message.reply('Failed to sync permissions.');
+    }
+  }
+
+  // --- Moderation Commands ---
+
   if (command === 'warn') {
     if (!message.member?.permissions.has('KickMembers')) return;
     const target = message.mentions.users.first();

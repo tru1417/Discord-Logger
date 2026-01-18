@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { insertLogSchema, insertCaseSchema, insertRuleSchema, logs, cases, rules } from './schema';
+import { insertLogSchema, insertCaseSchema, insertRuleSchema, insertRoleConfigSchema, logs, cases, rules, roleConfigs } from './schema';
 
 export const errorSchemas = {
   validation: z.object({
@@ -28,7 +28,7 @@ export const api = {
         200: z.array(z.custom<typeof logs.$inferSelect>()),
       },
     },
-    create: { // Mostly for internal use or testing
+    create: { 
       method: 'POST' as const,
       path: '/api/logs',
       input: insertLogSchema,
@@ -59,7 +59,7 @@ export const api = {
         404: errorSchemas.notFound,
       },
     },
-    create: { // Mostly for internal use or testing
+    create: { 
       method: 'POST' as const,
       path: '/api/cases',
       input: insertCaseSchema,
@@ -89,6 +89,41 @@ export const api = {
     delete: {
       method: 'DELETE' as const,
       path: '/api/rules/:id',
+      responses: {
+        204: z.void(),
+        404: errorSchemas.notFound,
+      },
+    },
+  },
+  roles: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/roles',
+      responses: {
+        200: z.array(z.custom<typeof roleConfigs.$inferSelect>()),
+      },
+    },
+    create: {
+      method: 'POST' as const,
+      path: '/api/roles',
+      input: insertRoleConfigSchema,
+      responses: {
+        201: z.custom<typeof roleConfigs.$inferSelect>(),
+        400: errorSchemas.validation,
+      },
+    },
+    update: {
+      method: 'PUT' as const,
+      path: '/api/roles/:id',
+      input: insertRoleConfigSchema.partial(),
+      responses: {
+        200: z.custom<typeof roleConfigs.$inferSelect>(),
+        404: errorSchemas.notFound,
+      },
+    },
+    delete: {
+      method: 'DELETE' as const,
+      path: '/api/roles/:id',
       responses: {
         204: z.void(),
         404: errorSchemas.notFound,

@@ -1,9 +1,10 @@
 import { db } from "./db";
 import {
-  logs, cases, rules,
+  logs, cases, rules, roleConfigs,
   type Log, type InsertLog,
   type Case, type InsertCase,
-  type Rule, type InsertRule
+  type Rule, type InsertRule,
+  type RoleConfig, type InsertRoleConfig
 } from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
 
@@ -23,6 +24,12 @@ export interface IStorage {
   createRule(r: InsertRule): Promise<Rule>;
   getRules(): Promise<Rule[]>;
   deleteRule(id: number): Promise<void>;
+
+  // Roles
+  createRoleConfig(r: InsertRoleConfig): Promise<RoleConfig>;
+  getRoleConfigs(): Promise<RoleConfig[]>;
+  updateRoleConfig(id: number, r: Partial<InsertRoleConfig>): Promise<RoleConfig>;
+  deleteRoleConfig(id: number): Promise<void>;
   
   // Stats
   getStats(): Promise<{ totalLogs: number; totalCases: number; recentActivity: Log[] }>;
@@ -75,6 +82,27 @@ export class DatabaseStorage implements IStorage {
 
   async deleteRule(id: number): Promise<void> {
     await db.delete(rules).where(eq(rules.id, id));
+  }
+
+  async createRoleConfig(r: InsertRoleConfig): Promise<RoleConfig> {
+    const [newRole] = await db.insert(roleConfigs).values(r).returning();
+    return newRole;
+  }
+
+  async getRoleConfigs(): Promise<RoleConfig[]> {
+    return await db.select().from(roleConfigs).orderBy(desc(roleConfigs.rank));
+  }
+
+  async updateRoleConfig(id: number, r: Partial<InsertRoleConfig>): Promise<RoleConfig> {
+    const [updated] = await db.update(roleConfigs)
+      .set(r)
+      .where(eq(roleConfigs.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteRoleConfig(id: number): Promise<void> {
+    await db.delete(roleConfigs).where(eq(roleConfigs.id, id));
   }
 
   async getStats(): Promise<{ totalLogs: number; totalCases: number; recentActivity: Log[] }> {

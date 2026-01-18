@@ -1,20 +1,20 @@
-import { pgTable, text, serial, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, jsonb, boolean, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 export const logs = pgTable("logs", {
   id: serial("id").primaryKey(),
-  type: text("type").notNull(), // 'message_delete', 'member_join', 'automod', etc.
+  type: text("type").notNull(), 
   content: text("content").notNull(),
-  userId: text("user_id"), // Discord User ID
-  username: text("username"), // Discord Username at the time
-  metadata: jsonb("metadata"), // Extra details like channel ID, etc.
+  userId: text("user_id"), 
+  username: text("username"), 
+  metadata: jsonb("metadata"), 
   timestamp: timestamp("timestamp").defaultNow().notNull(),
 });
 
 export const cases = pgTable("cases", {
   id: serial("id").primaryKey(),
-  type: text("type").notNull(), // 'warn', 'kick', 'ban'
+  type: text("type").notNull(), 
   reason: text("reason"),
   moderatorId: text("moderator_id").notNull(),
   moderatorName: text("moderator_name").notNull(),
@@ -26,15 +26,26 @@ export const cases = pgTable("cases", {
 
 export const rules = pgTable("rules", {
   id: serial("id").primaryKey(),
-  content: text("content").notNull(), // The actual rule text
-  severity: text("severity").notNull(), // 'warn', 'kick', 'ban'
+  content: text("content").notNull(), 
+  severity: text("severity").notNull(), 
   enabled: boolean("enabled").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const roleConfigs = pgTable("role_configs", {
+  id: serial("id").primaryKey(),
+  roleId: text("role_id").notNull(), // Discord Role ID
+  roleName: text("role_name").notNull(),
+  isAutoRole: boolean("is_auto_role").default(false), // Assign on join?
+  rank: integer("rank").default(0), // Higher rank = more perms
+  permissions: jsonb("permissions"), // JSON of allowed actions/perms
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const insertLogSchema = createInsertSchema(logs).omit({ id: true, timestamp: true });
 export const insertCaseSchema = createInsertSchema(cases).omit({ id: true, timestamp: true });
 export const insertRuleSchema = createInsertSchema(rules).omit({ id: true, createdAt: true });
+export const insertRoleConfigSchema = createInsertSchema(roleConfigs).omit({ id: true, createdAt: true });
 
 export type Log = typeof logs.$inferSelect;
 export type InsertLog = z.infer<typeof insertLogSchema>;
@@ -44,3 +55,6 @@ export type InsertCase = z.infer<typeof insertCaseSchema>;
 
 export type Rule = typeof rules.$inferSelect;
 export type InsertRule = z.infer<typeof insertRuleSchema>;
+
+export type RoleConfig = typeof roleConfigs.$inferSelect;
+export type InsertRoleConfig = z.infer<typeof insertRoleConfigSchema>;
