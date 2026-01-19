@@ -11,6 +11,7 @@ import Logs from "@/pages/Logs";
 import Cases from "@/pages/Cases";
 import Rules from "@/pages/Rules";
 import Roles from "@/pages/Roles";
+import BotSettings from "@/pages/BotSettings";
 
 function Router() {
   return (
@@ -23,6 +24,7 @@ function Router() {
           <Route path="/cases" component={Cases} />
           <Route path="/rules" component={Rules} />
           <Route path="/roles" component={Roles} />
+          <Route path="/settings" component={BotSettings} />
           <Route component={NotFound} />
         </Switch>
       </main>

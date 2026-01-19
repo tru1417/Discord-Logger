@@ -8,6 +8,7 @@ const items = [
   { icon: Gavel, label: "Moderation Cases", href: "/cases" },
   { icon: Shield, label: "AutoMod Rules", href: "/rules" },
   { icon: UserCog, label: "Roles & Perms", href: "/roles" },
+  { icon: Bot, label: "Settings", href: "/settings" },
 ];
 
 export function Sidebar() {

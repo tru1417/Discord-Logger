@@ -1,7 +1,48 @@
 import { PageHeader } from "@/components/PageHeader";
-import { Save, RefreshCw } from "lucide-react";
+import { Save, RefreshCw, Link as LinkIcon, Loader2 } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { api, buildUrl } from "@shared/routes";
+import { useState, useEffect } from "react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function BotSettings() {
+  const { toast } = useToast();
+  const [inviteLink, setInviteLink] = useState("");
+
+  const { data: inviteSetting, isLoading } = useQuery({
+    queryKey: ["/api/settings/discord_invite_link"],
+  });
+
+  useEffect(() => {
+    if (inviteSetting) {
+      setInviteLink(inviteSetting.value);
+    }
+  }, [inviteSetting]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/settings", {
+        key: "discord_invite_link",
+        value: inviteLink,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/discord_invite_link"] });
+      toast({
+        title: "Settings Saved",
+        description: "Your Discord invite link has been updated.",
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Error",
+        description: err.message || "Failed to save settings.",
+        variant: "destructive",
+      });
+    },
+  });
+
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto animate-in fade-in duration-500">
       <PageHeader 
@@ -15,9 +56,36 @@ export default function BotSettings() {
           <h3 className="text-xl font-bold text-white border-b border-[#202225] pb-4">General Configuration</h3>
           
           <div className="space-y-2">
+            <label className="text-xs font-bold text-gray-400 uppercase flex items-center gap-2">
+              <LinkIcon size={14} />
+              Discord Invite Link
+            </label>
+            <input 
+              type="text" 
+              value={inviteLink}
+              onChange={(e) => setInviteLink(e.target.value)}
+              placeholder="https://discord.gg/..." 
+              className="discord-input w-full" 
+            />
+            <p className="text-xs text-gray-500">The link shown on the dashboard for users to join your server.</p>
+          </div>
+
+          <div className="space-y-2">
             <label className="text-xs font-bold text-gray-400 uppercase">Bot Nickname</label>
             <input type="text" defaultValue="AutoMod Bot" className="discord-input w-full" />
           </div>
+          
+          <div className="pt-4">
+            <button 
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending}
+              className="discord-button w-full flex justify-center items-center gap-2 disabled:opacity-50"
+            >
+              {saveMutation.isPending ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+              Save Changes
+            </button>
+          </div>
+        </div>
 
           <div className="space-y-2">
             <label className="text-xs font-bold text-gray-400 uppercase">Status Message</label>
