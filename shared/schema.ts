@@ -42,10 +42,18 @@ export const roleConfigs = pgTable("role_configs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const settings = pgTable("settings", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const insertLogSchema = createInsertSchema(logs).omit({ id: true, timestamp: true });
 export const insertCaseSchema = createInsertSchema(cases).omit({ id: true, timestamp: true });
 export const insertRuleSchema = createInsertSchema(rules).omit({ id: true, createdAt: true });
 export const insertRoleConfigSchema = createInsertSchema(roleConfigs).omit({ id: true, createdAt: true });
+export const insertSettingsSchema = createInsertSchema(settings).omit({ id: true, updatedAt: true });
 
 export type Log = typeof logs.$inferSelect;
 export type InsertLog = z.infer<typeof insertLogSchema>;
@@ -58,3 +66,6 @@ export type InsertRule = z.infer<typeof insertRuleSchema>;
 
 export type RoleConfig = typeof roleConfigs.$inferSelect;
 export type InsertRoleConfig = z.infer<typeof insertRoleConfigSchema>;
+
+export type Setting = typeof settings.$inferSelect;
+export type InsertSetting = z.infer<typeof insertSettingsSchema>;

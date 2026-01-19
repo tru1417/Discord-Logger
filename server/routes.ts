@@ -139,6 +139,29 @@ export async function registerRoutes(
     res.status(204).send();
   });
 
+  // Settings
+  app.get(api.settings.get.path, async (req, res) => {
+    const setting = await storage.getSetting(req.params.key);
+    if (!setting) return res.status(404).json({ message: "Setting not found" });
+    res.json(setting);
+  });
+
+  app.post(api.settings.set.path, async (req, res) => {
+    try {
+      const input = api.settings.set.input.parse(req.body);
+      const setting = await storage.setSetting(input);
+      res.json(setting);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({
+          message: err.errors[0].message,
+          field: err.errors[0].path.join('.'),
+        });
+      }
+      throw err;
+    }
+  });
+
   // Stats
   app.get(api.stats.get.path, async (req, res) => {
     const stats = await storage.getStats();

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { insertLogSchema, insertCaseSchema, insertRuleSchema, insertRoleConfigSchema, logs, cases, rules, roleConfigs } from './schema';
+import { insertLogSchema, insertCaseSchema, insertRuleSchema, insertRoleConfigSchema, insertSettingsSchema, logs, cases, rules, roleConfigs, settings } from './schema';
 
 export const errorSchemas = {
   validation: z.object({
@@ -127,6 +127,25 @@ export const api = {
       responses: {
         204: z.void(),
         404: errorSchemas.notFound,
+      },
+    },
+  },
+  settings: {
+    get: {
+      method: 'GET' as const,
+      path: '/api/settings/:key',
+      responses: {
+        200: z.custom<typeof settings.$inferSelect>(),
+        404: errorSchemas.notFound,
+      },
+    },
+    set: {
+      method: 'POST' as const,
+      path: '/api/settings',
+      input: insertSettingsSchema,
+      responses: {
+        200: z.custom<typeof settings.$inferSelect>(),
+        400: errorSchemas.validation,
       },
     },
   },

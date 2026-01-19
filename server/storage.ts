@@ -1,10 +1,11 @@
 import { db } from "./db";
 import {
-  logs, cases, rules, roleConfigs,
+  logs, cases, rules, roleConfigs, settings,
   type Log, type InsertLog,
   type Case, type InsertCase,
   type Rule, type InsertRule,
-  type RoleConfig, type InsertRoleConfig
+  type RoleConfig, type InsertRoleConfig,
+  type Setting, type InsertSetting
 } from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
 
@@ -30,6 +31,10 @@ export interface IStorage {
   getRoleConfigs(): Promise<RoleConfig[]>;
   updateRoleConfig(id: number, r: Partial<InsertRoleConfig>): Promise<RoleConfig>;
   deleteRoleConfig(id: number): Promise<void>;
+
+  // Settings
+  getSetting(key: string): Promise<Setting | undefined>;
+  setSetting(s: InsertSetting): Promise<Setting>;
   
   // Stats
   getStats(): Promise<{ totalLogs: number; totalCases: number; recentActivity: Log[] }>;
@@ -103,6 +108,24 @@ export class DatabaseStorage implements IStorage {
 
   async deleteRoleConfig(id: number): Promise<void> {
     await db.delete(roleConfigs).where(eq(roleConfigs.id, id));
+  }
+
+  async getSetting(key: string): Promise<Setting | undefined> {
+    const [s] = await db.select().from(settings).where(eq(settings.key, key));
+    return s;
+  }
+
+  async setSetting(s: InsertSetting): Promise<Setting> {
+    const [existing] = await db.select().from(settings).where(eq(settings.key, s.key));
+    if (existing) {
+      const [updated] = await db.update(settings)
+        .set({ value: s.value, updatedAt: new Date() })
+        .where(eq(settings.key, s.key))
+        .returning();
+      return updated;
+    }
+    const [newSetting] = await db.insert(settings).values(s).returning();
+    return newSetting;
   }
 
   async getStats(): Promise<{ totalLogs: number; totalCases: number; recentActivity: Log[] }> {
