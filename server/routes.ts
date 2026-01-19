@@ -141,7 +141,8 @@ export async function registerRoutes(
 
   // Settings
   app.get(api.settings.get.path, async (req, res) => {
-    const setting = await storage.getSetting(req.params.key);
+    const key = req.params.key as string;
+    const setting = await storage.getSetting(key);
     if (!setting) return res.status(404).json({ message: "Setting not found" });
     res.json(setting);
   });

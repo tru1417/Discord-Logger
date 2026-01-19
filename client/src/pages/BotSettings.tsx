@@ -1,16 +1,19 @@
 import { PageHeader } from "@/components/PageHeader";
-import { Save, RefreshCw, Link as LinkIcon, Loader2 } from "lucide-react";
+import { Save, Link as LinkIcon, Loader2, RefreshCw } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { api, buildUrl } from "@shared/routes";
 import { useState, useEffect } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+
+interface Setting {
+  value: string;
+}
 
 export default function BotSettings() {
   const { toast } = useToast();
   const [inviteLink, setInviteLink] = useState("");
 
-  const { data: inviteSetting, isLoading } = useQuery({
+  const { data: inviteSetting } = useQuery<Setting>({
     queryKey: ["/api/settings/discord_invite_link"],
   });
 
@@ -51,7 +54,6 @@ export default function BotSettings() {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Status Configuration */}
         <div className="discord-card p-6 space-y-6">
           <h3 className="text-xl font-bold text-white border-b border-[#202225] pb-4">General Configuration</h3>
           
@@ -87,36 +89,8 @@ export default function BotSettings() {
           </div>
         </div>
 
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-400 uppercase">Status Message</label>
-            <div className="flex gap-2">
-              <select className="discord-input w-32">
-                <option>Playing</option>
-                <option>Watching</option>
-                <option>Listening to</option>
-              </select>
-              <input type="text" defaultValue="Keeping the server safe" className="discord-input flex-1" />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-400 uppercase">Log Channel ID</label>
-            <input type="text" defaultValue="123456789012345678" className="discord-input w-full font-mono text-sm" />
-            <p className="text-xs text-gray-500">Channel where logs will be posted in Discord.</p>
-          </div>
-          
-          <div className="pt-4">
-            <button className="discord-button w-full flex justify-center items-center gap-2">
-              <Save size={18} />
-              Save Changes
-            </button>
-          </div>
-        </div>
-
-        {/* Feature Toggles */}
         <div className="discord-card p-6 space-y-6">
           <h3 className="text-xl font-bold text-white border-b border-[#202225] pb-4">Feature Toggles</h3>
-          
           {[
             { label: "Auto-Moderation", desc: "Automatically enforce defined rules", active: true },
             { label: "Welcome Messages", desc: "Greet new members when they join", active: true },

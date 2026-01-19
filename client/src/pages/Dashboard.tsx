@@ -3,14 +3,17 @@ import { StatsCard } from "@/components/StatsCard";
 import { PageHeader } from "@/components/PageHeader";
 import { MessageSquare, ShieldAlert, Gavel, Clock, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
-import { Badge } from "@/components/ui/Badge";
+import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@shared/routes";
+
+interface Setting {
+  value: string;
+}
 
 export default function Dashboard() {
   const { data: stats, isLoading } = useStats();
-  const { data: inviteLink } = useQuery({
+  const { data: inviteLink } = useQuery<Setting>({
     queryKey: ["/api/settings/discord_invite_link"],
   });
 
@@ -81,7 +84,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <motion.div variants={item} className="lg:col-span-2 space-y-8">
-          {inviteLink && (
+          {inviteLink?.value && (
             <div className="bg-primary/10 border border-primary/20 p-6 rounded-xl flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-bold text-white mb-1">Server Invite Link</h3>
@@ -108,11 +111,11 @@ export default function Dashboard() {
               {stats?.recentActivity.map((log) => (
                 <div key={log.id} className="p-4 flex items-start gap-4 hover:bg-[#36393f] transition-colors">
                   <div className="w-10 h-10 rounded-full bg-[#202225] flex items-center justify-center shrink-0">
-                    <span className="text-primary font-mono font-bold text-xs">{log.username.slice(0, 2).toUpperCase()}</span>
+                    <span className="text-primary font-mono font-bold text-xs">{(log.username || "??").slice(0, 2).toUpperCase()}</span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-bold text-white">{log.username}</span>
+                      <span className="text-sm font-bold text-white">{log.username || "Unknown"}</span>
                       <span className="text-xs text-[#72767d]">{format(new Date(log.timestamp), "MMM d, h:mm a")}</span>
                     </div>
                     <p className="text-sm text-[#dcddde] truncate">{log.content}</p>
@@ -129,7 +132,7 @@ export default function Dashboard() {
           </div>
         </motion.div>
 
-        <motion.div variants={item} className="bg-[#2f3136] rounded-xl border border-[#202225] p-6">
+        <motion.div variants={item} className="bg-[#2f3136] rounded-xl border border-[#202225] p-6 h-fit">
           <h3 className="text-lg font-bold text-white mb-4">System Status</h3>
           <div className="space-y-4">
             <div className="flex items-center justify-between p-3 bg-[#202225] rounded-lg">
