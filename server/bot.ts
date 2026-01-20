@@ -143,6 +143,9 @@ async function registerSlashCommands(clientId: string) {
       .setName('logs')
       .setDescription('View recent logs for a user')
       .addUserOption(option => option.setName('user').setDescription('The user to view logs for').setRequired(true)),
+    new SlashCommandBuilder()
+      .setName('dashboard')
+      .setDescription('Get the link to the moderation dashboard'),
   ].map(command => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
@@ -239,6 +242,17 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
     const logSummary = logs.slice(0, 5).map(l => `[${l.type}] ${l.content}`).join('\n');
     await interaction.reply(`Recent logs for ${target.tag}:\n${logSummary}`);
+  }
+
+  if (commandName === 'dashboard') {
+    const dashboardUrl = process.env.REPL_SLUG && process.env.REPL_OWNER 
+      ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
+      : 'Dashboard URL not configured.';
+    
+    await interaction.reply({
+      content: `🔗 **Moderation Dashboard**: ${dashboardUrl}`,
+      ephemeral: true
+    });
   }
 }
 
