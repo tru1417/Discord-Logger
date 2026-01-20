@@ -146,9 +146,9 @@ async function registerSlashCommands(clientId: string) {
       .addStringOption(option => option.setName('reason').setDescription('The reason for the warning')),
     new SlashCommandBuilder()
       .setName('kick')
-      .setDescription('Kick a user')
+      .setDescription('Kick a member from the server')
       .addUserOption(option => option.setName('user').setDescription('The user to kick').setRequired(true))
-      .addStringOption(option => option.setName('reason').setDescription('The reason for the kick')),
+      .addStringOption(option => option.setName('reason').setDescription('Reason for kick').setRequired(false)),
     new SlashCommandBuilder()
       .setName('ban')
       .setDescription('Ban a user')
