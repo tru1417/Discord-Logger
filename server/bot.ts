@@ -73,6 +73,21 @@ export function initializeBot() {
       },
     });
 
+    // Dynamic Welcome Message
+    try {
+      const welcomeSetting = await storage.getSetting('welcome_message');
+      const welcomeMessage = welcomeSetting?.value || "Welcome to the server, {user}!";
+      
+      const channel = member.guild.systemChannel || member.guild.channels.cache.find(ch => ch.isTextBased() && ch.permissionsFor(member.guild.members.me!).has('SendMessages'));
+      
+      if (channel && 'send' in channel) {
+        const formattedMessage = welcomeMessage.replace('{user}', `<@${member.id}>`).replace('{server}', member.guild.name);
+        await (channel as any).send(formattedMessage);
+      }
+    } catch (error) {
+      console.error("Error sending welcome message:", error);
+    }
+
     // Auto Role Assignment
     try {
       const roleConfigs = await storage.getRoleConfigs();

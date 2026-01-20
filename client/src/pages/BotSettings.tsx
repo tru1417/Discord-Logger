@@ -12,9 +12,14 @@ interface Setting {
 export default function BotSettings() {
   const { toast } = useToast();
   const [inviteLink, setInviteLink] = useState("");
+  const [welcomeMessage, setWelcomeMessage] = useState("");
 
   const { data: inviteSetting } = useQuery<Setting>({
     queryKey: ["/api/settings/discord_invite_link"],
+  });
+
+  const { data: welcomeSetting } = useQuery<Setting>({
+    queryKey: ["/api/settings/welcome_message"],
   });
 
   useEffect(() => {
@@ -23,18 +28,31 @@ export default function BotSettings() {
     }
   }, [inviteSetting]);
 
+  useEffect(() => {
+    if (welcomeSetting) {
+      setWelcomeMessage(welcomeSetting.value);
+    }
+  }, [welcomeSetting]);
+
   const saveMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/settings", {
-        key: "discord_invite_link",
-        value: inviteLink,
-      });
+      await Promise.all([
+        apiRequest("POST", "/api/settings", {
+          key: "discord_invite_link",
+          value: inviteLink,
+        }),
+        apiRequest("POST", "/api/settings", {
+          key: "welcome_message",
+          value: welcomeMessage,
+        })
+      ]);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings/discord_invite_link"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/welcome_message"] });
       toast({
         title: "Settings Saved",
-        description: "Your Discord invite link has been updated.",
+        description: "Your bot settings have been updated.",
       });
     },
     onError: (err: any) => {
@@ -75,6 +93,17 @@ export default function BotSettings() {
           <div className="space-y-2">
             <label className="text-xs font-bold text-gray-400 uppercase">Bot Nickname</label>
             <input type="text" defaultValue="AutoMod Bot" className="discord-input w-full" />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-gray-400 uppercase">Welcome Message</label>
+            <textarea 
+              value={welcomeMessage}
+              onChange={(e) => setWelcomeMessage(e.target.value)}
+              placeholder="Welcome to the server, {user}!" 
+              className="discord-input w-full min-h-[100px] resize-none" 
+            />
+            <p className="text-xs text-gray-500">Use {'{user}'} to mention the user and {'{server}'} for the server name.</p>
           </div>
           
           <div className="pt-4">
