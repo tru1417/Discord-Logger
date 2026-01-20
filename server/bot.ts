@@ -161,6 +161,9 @@ async function registerSlashCommands(clientId: string) {
     new SlashCommandBuilder()
       .setName('dashboard')
       .setDescription('Get the link to the moderation dashboard'),
+    new SlashCommandBuilder()
+      .setName('ping')
+      .setDescription('Replies with Pong!'),
   ].map(command => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
@@ -268,6 +271,10 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       content: `🔗 **Moderation Dashboard**: ${dashboardUrl}`,
       ephemeral: true
     });
+  }
+
+  if (commandName === 'ping') {
+    await interaction.reply('Pong!');
   }
 }
 
