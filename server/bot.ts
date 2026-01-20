@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events, Partials, Message, PermissionsBitField } from "discord.js";
+import { Client, GatewayIntentBits, Events, Partials, Message, PermissionsBitField, SlashCommandBuilder, REST, Routes, ChatInputCommandInteraction } from "discord.js";
 import { storage } from "./storage";
 import { OpenAI } from "openai";
 
@@ -31,8 +31,9 @@ export function initializeBot() {
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
   });
 
-  client.on(Events.ClientReady, (c) => {
+  client.on(Events.ClientReady, async (c) => {
     console.log(`Ready! Logged in as ${c.user.tag}`);
+    await registerSlashCommands(c.user.id);
   });
 
   // Log Message Deletions
@@ -108,11 +109,137 @@ export function initializeBot() {
     }
   });
 
+  // Handle Slash Commands
+  client.on(Events.InteractionCreate, async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    await handleSlashCommand(interaction);
+  });
+
   client.login(process.env.DISCORD_TOKEN).catch(err => {
     console.error("Failed to login to Discord:", err);
   });
 
   return client;
+}
+
+async function registerSlashCommands(clientId: string) {
+  const commands = [
+    new SlashCommandBuilder()
+      .setName('warn')
+      .setDescription('Warn a user')
+      .addUserOption(option => option.setName('user').setDescription('The user to warn').setRequired(true))
+      .addStringOption(option => option.setName('reason').setDescription('The reason for the warning')),
+    new SlashCommandBuilder()
+      .setName('kick')
+      .setDescription('Kick a user')
+      .addUserOption(option => option.setName('user').setDescription('The user to kick').setRequired(true))
+      .addStringOption(option => option.setName('reason').setDescription('The reason for the kick')),
+    new SlashCommandBuilder()
+      .setName('ban')
+      .setDescription('Ban a user')
+      .addUserOption(option => option.setName('user').setDescription('The user to ban').setRequired(true))
+      .addStringOption(option => option.setName('reason').setDescription('The reason for the ban')),
+    new SlashCommandBuilder()
+      .setName('logs')
+      .setDescription('View recent logs for a user')
+      .addUserOption(option => option.setName('user').setDescription('The user to view logs for').setRequired(true)),
+  ].map(command => command.toJSON());
+
+  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
+
+  try {
+    console.log('Started refreshing application (/) commands.');
+    await rest.put(Routes.applicationCommands(clientId), { body: commands });
+    console.log('Successfully reloaded application (/) commands.');
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
+  const { commandName, options, member, user, guild } = interaction;
+
+  if (!guild) return;
+
+  if (commandName === 'warn') {
+    if (!(member?.permissions as Readonly<PermissionsBitField>).has(PermissionsBitField.Flags.KickMembers)) {
+      return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+    }
+    const target = options.getUser('user', true);
+    const reason = options.getString('reason') || 'No reason provided';
+
+    await storage.createCase({
+      type: 'warn',
+      targetId: target.id,
+      targetName: target.tag,
+      moderatorId: user.id,
+      moderatorName: user.tag,
+      reason,
+      active: true,
+    });
+
+    await interaction.reply(`Warned ${target.tag} for: ${reason}`);
+  }
+
+  if (commandName === 'kick') {
+    if (!(member?.permissions as Readonly<PermissionsBitField>).has(PermissionsBitField.Flags.KickMembers)) {
+      return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+    }
+    const target = options.getMember('user');
+    if (!target || !('kick' in target)) return interaction.reply('User not found in this server.');
+    if (!target.kickable) return interaction.reply('I cannot kick this user.');
+
+    const reason = options.getString('reason') || 'No reason provided';
+    await target.kick(reason);
+
+    await storage.createCase({
+      type: 'kick',
+      targetId: target.user.id,
+      targetName: target.user.tag,
+      moderatorId: user.id,
+      moderatorName: user.tag,
+      reason,
+      active: false,
+    });
+
+    await interaction.reply(`Kicked ${target.user.tag} for: ${reason}`);
+  }
+
+  if (commandName === 'ban') {
+    if (!(member?.permissions as Readonly<PermissionsBitField>).has(PermissionsBitField.Flags.BanMembers)) {
+      return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+    }
+    const target = options.getMember('user');
+    if (!target || !('ban' in target)) return interaction.reply('User not found in this server.');
+    if (!target.bannable) return interaction.reply('I cannot ban this user.');
+
+    const reason = options.getString('reason') || 'No reason provided';
+    await target.ban({ reason });
+
+    await storage.createCase({
+      type: 'ban',
+      targetId: target.user.id,
+      targetName: target.user.tag,
+      moderatorId: user.id,
+      moderatorName: user.tag,
+      reason,
+      active: true,
+    });
+
+    await interaction.reply(`Banned ${target.user.tag} for: ${reason}`);
+  }
+
+  if (commandName === 'logs') {
+    const target = options.getUser('user', true);
+    const logs = await storage.getLogsByUser(target.id);
+    
+    if (logs.length === 0) {
+      return interaction.reply(`No logs found for ${target.tag}.`);
+    }
+
+    const logSummary = logs.slice(0, 5).map(l => `[${l.type}] ${l.content}`).join('\n');
+    await interaction.reply(`Recent logs for ${target.tag}:\n${logSummary}`);
+  }
 }
 
 async function handleCommand(message: Message) {
@@ -275,7 +402,9 @@ async function handleAutoMod(message: Message) {
         });
       } else if (severity === 'kick' && target?.kickable) {
         await target.kick(`AutoMod: ${reason}`);
-        await message.channel.send(`👢 **KICKED** ${message.author.tag}: ${reason}`);
+        if (message.channel.isTextBased() && 'send' in message.channel) {
+          await (message.channel as any).send(`👢 **KICKED** ${message.author.tag}: ${reason}`);
+        }
         await storage.createCase({
           type: 'kick',
           targetId: message.author.id,
@@ -287,7 +416,9 @@ async function handleAutoMod(message: Message) {
         });
       } else if (severity === 'ban' && target?.bannable) {
         await target.ban({ reason: `AutoMod: ${reason}` });
-        await message.channel.send(`🔨 **BANNED** ${message.author.tag}: ${reason}`);
+        if (message.channel.isTextBased() && 'send' in message.channel) {
+          await (message.channel as any).send(`🔨 **BANNED** ${message.author.tag}: ${reason}`);
+        }
         await storage.createCase({
           type: 'ban',
           targetId: message.author.id,
