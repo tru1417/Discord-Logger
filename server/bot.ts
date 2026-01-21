@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events, Partials, Message, PermissionsBitField, SlashCommandBuilder, REST, Routes, ChatInputCommandInteraction, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, InteractionType, PermissionFlagsBits, MessageReaction, User } from "discord.js";
+import { Client, GatewayIntentBits, Events, Partials, Message, PermissionsBitField, SlashCommandBuilder, REST, Routes, ChatInputCommandInteraction, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, InteractionType, PermissionFlagsBits, MessageReaction, User, MessageFlags } from "discord.js";
 import { storage } from "./storage";
 import { OpenAI } from "openai";
 
@@ -227,7 +227,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
   if (commandName === 'warn') {
     if (!(member?.permissions as Readonly<PermissionsBitField>).has(PermissionsBitField.Flags.KickMembers)) {
-      return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+      return interaction.reply({ content: 'You do not have permission to use this command.', flags: [MessageFlags.Ephemeral] });
     }
     const target = options.getUser('user', true);
     const reason = options.getString('reason') || 'No reason provided';
@@ -247,7 +247,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
   if (commandName === 'kick') {
     if (!(member?.permissions as Readonly<PermissionsBitField>).has(PermissionsBitField.Flags.KickMembers)) {
-      return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+      return interaction.reply({ content: 'You do not have permission to use this command.', flags: [MessageFlags.Ephemeral] });
     }
     const target = options.getMember('user');
     if (!target || !('kick' in target)) return interaction.reply('User not found in this server.');
@@ -271,7 +271,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
   if (commandName === 'ban') {
     if (!(member?.permissions as Readonly<PermissionsBitField>).has(PermissionsBitField.Flags.BanMembers)) {
-      return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+      return interaction.reply({ content: 'You do not have permission to use this command.', flags: [MessageFlags.Ephemeral] });
     }
     const target = options.getMember('user');
     if (!target || !('ban' in target)) return interaction.reply('User not found in this server.');
@@ -312,7 +312,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
     
     await interaction.reply({
       content: `🔗 **Moderation Dashboard**: ${dashboardUrl}`,
-      ephemeral: true
+      flags: [MessageFlags.Ephemeral]
     });
   }
 
@@ -322,7 +322,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
   if (commandName === 'reactionrole') {
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
-      return interaction.reply({ content: 'Admins only.', ephemeral: true });
+      return interaction.reply({ content: 'Admins only.', flags: [MessageFlags.Ephemeral] });
     }
 
     const title = interaction.options.getString('title', true);
@@ -335,7 +335,8 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       .setDescription(`${description}\n\nReact with ${emoji} to get **${role.name}**`)
       .setColor('Blue');
 
-    const message = await interaction.channel?.send({ embeds: [embed] });
+    const channel = interaction.channel as any;
+    const message = await channel?.send({ embeds: [embed] });
     if (message) {
       await message.react(emoji);
 
@@ -349,16 +350,96 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
         permissions: {},
       });
 
-      await interaction.reply({ content: '✅ Reaction role panel created.', ephemeral: true });
+      await interaction.reply({ content: '✅ Reaction role panel created.', flags: [MessageFlags.Ephemeral] });
     } else {
-      await interaction.reply({ content: '❌ Failed to create panel.', ephemeral: true });
+      await interaction.reply({ content: '❌ Failed to create panel.', flags: [MessageFlags.Ephemeral] });
+    }
+  }
+
+  if (commandName === 'note') {
+    const subcommand = options.getSubcommand();
+
+    if (subcommand === 'create') {
+      const modal = new ModalBuilder()
+        .setCustomId('noteModal')
+        .setTitle('Note Report Form');
+
+      const titleInput = new TextInputBuilder()
+        .setCustomId('noteTitle')
+        .setLabel('Title')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      const subjectInput = new TextInputBuilder()
+        .setCustomId('noteSubject')
+        .setLabel('Subject / Person')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      const detailsInput = new TextInputBuilder()
+        .setCustomId('noteDetails')
+        .setLabel('Details')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true);
+
+      const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(titleInput);
+      const row2 = new ActionRowBuilder<TextInputBuilder>().addComponents(subjectInput);
+      const row3 = new ActionRowBuilder<TextInputBuilder>().addComponents(detailsInput);
+
+      modal.addComponents(row1, row2, row3);
+
+      await interaction.showModal(modal);
+    } else if (subcommand === 'search') {
+      const queryValue = interaction.options.getString('query', true).toLowerCase();
+
+      // Fetch logs of type 'note_report' from storage
+      const logs = await storage.getLogs();
+      const results = logs.filter(log => {
+        if (log.type !== 'note_report') return false;
+        const metadata = log.metadata as any;
+        return (
+          metadata?.title?.toLowerCase().includes(queryValue) ||
+          metadata?.subject?.toLowerCase().includes(queryValue) ||
+          metadata?.details?.toLowerCase().includes(queryValue) ||
+          log.username?.toLowerCase().includes(queryValue)
+        );
+      });
+
+      if (results.length === 0) {
+        return interaction.reply({
+          content: '🔍 No matching notes found.',
+          flags: [MessageFlags.Ephemeral]
+        });
+      }
+
+      const list = results.map(n => {
+        const meta = n.metadata as any;
+        return `**ID ${n.id}** — ${meta?.title || 'No Title'}\nSubject: ${meta?.subject || 'Unknown'}\nAuthor: ${n.username}`;
+      }).join('\n\n');
+
+      const embed = new EmbedBuilder()
+        .setTitle(`🔍 Search Results (${results.length})`)
+        .setDescription(list.substring(0, 4000))
+        .setColor('Purple');
+
+      return interaction.reply({
+        embeds: [embed],
+        flags: [MessageFlags.Ephemeral]
+      });
     }
   }
 }
 
-async function handleReactionAdd(reaction: MessageReaction, user: User) {
+async function handleReactionAdd(reaction: MessageReaction | any, user: User | any) {
   if (user.bot) return;
-  if (reaction.partial) await reaction.fetch();
+  if (reaction.partial) {
+    try {
+      await reaction.fetch();
+    } catch (error) {
+      console.error('Something went wrong when fetching the reaction:', error);
+      return;
+    }
+  }
 
   const rc = await (storage as any).getRoleConfigByReaction(reaction.message.id, reaction.emoji.name || "");
   if (rc) {
@@ -367,9 +448,16 @@ async function handleReactionAdd(reaction: MessageReaction, user: User) {
   }
 }
 
-async function handleReactionRemove(reaction: MessageReaction, user: User) {
+async function handleReactionRemove(reaction: MessageReaction | any, user: User | any) {
   if (user.bot) return;
-  if (reaction.partial) await reaction.fetch();
+  if (reaction.partial) {
+    try {
+      await reaction.fetch();
+    } catch (error) {
+      console.error('Something went wrong when fetching the reaction:', error);
+      return;
+    }
+  }
 
   const rc = await (storage as any).getRoleConfigByReaction(reaction.message.id, reaction.emoji.name || "");
   if (rc) {
@@ -570,8 +658,9 @@ async function handleAutoMod(message: Message) {
         });
       } else if (severity === 'kick' && target?.kickable) {
         await target.kick(`AutoMod: ${reason}`);
-        if (message.channel.isTextBased() && 'send' in message.channel) {
-          await (message.channel as any).send(`👢 **KICKED** ${message.author.tag}: ${reason}`);
+        const channel = message.channel;
+        if (channel && 'send' in channel) {
+          await (channel as any).send(`👢 **KICKED** ${message.author.tag}: ${reason}`);
         }
         await storage.createCase({
           type: 'kick',
@@ -584,8 +673,9 @@ async function handleAutoMod(message: Message) {
         });
       } else if (severity === 'ban' && target?.bannable) {
         await target.ban({ reason: `AutoMod: ${reason}` });
-        if (message.channel.isTextBased() && 'send' in message.channel) {
-          await (message.channel as any).send(`🔨 **BANNED** ${message.author.tag}: ${reason}`);
+        const channel = message.channel;
+        if (channel.isTextBased() && 'send' in channel) {
+          await (channel as any).send(`🔨 **BANNED** ${message.author.tag}: ${reason}`);
         }
         await storage.createCase({
           type: 'ban',
