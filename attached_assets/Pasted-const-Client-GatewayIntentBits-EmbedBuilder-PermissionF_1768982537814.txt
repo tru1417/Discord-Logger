@@ -1,0 +1,98 @@
+const {
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder,
+  PermissionFlagsBits
+} = require('discord.js');
+
+const fs = require('fs');
+const { token } = require('./config.json');
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers
+  ]
+});
+
+function loadReactionRoles() {
+  return JSON.parse(fs.readFileSync('./reactionRoles.json'));
+}
+
+function saveReactionRoles(data) {
+  fs.writeFileSync('./reactionRoles.json', JSON.stringify(data, null, 2));
+}
+
+client.once('ready', () => {
+  console.log(`Logged in as ${client.user.tag}`);
+});
+
+
+// SLASH COMMAND
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== 'reactionrole') return;
+
+  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    return interaction.reply({ content: 'Admins only.', ephemeral: true });
+  }
+
+  const title = interaction.options.getString('title');
+  const description = interaction.options.getString('description');
+  const emoji = interaction.options.getString('emoji');
+  const role = interaction.options.getRole('role');
+
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(`${description}\n\nReact with ${emoji} to get **${role.name}**`)
+    .setColor('Blue');
+
+  const message = await interaction.channel.send({ embeds: [embed] });
+  await message.react(emoji);
+
+  const data = loadReactionRoles();
+  data.push({
+    messageId: message.id,
+    emoji: emoji,
+    roleId: role.id
+  });
+  saveReactionRoles(data);
+
+  await interaction.reply({ content: '✅ Reaction role panel created.', ephemeral: true });
+});
+
+
+// REACTION HANDLER
+client.on('messageReactionAdd', async (reaction, user) => {
+  if (user.bot) return;
+
+  const data = loadReactionRoles();
+  const roleData = data.find(r =>
+    r.messageId === reaction.message.id &&
+    r.emoji === reaction.emoji.name
+  );
+
+  if (!roleData) return;
+
+  const member = await reaction.message.guild.members.fetch(user.id);
+  await member.roles.add(roleData.roleId);
+});
+
+client.on('messageReactionRemove', async (reaction, user) => {
+  if (user.bot) return;
+
+  const data = loadReactionRoles();
+  const roleData = data.find(r =>
+    r.messageId === reaction.message.id &&
+    r.emoji === reaction.emoji.name
+  );
+
+  if (!roleData) return;
+
+  const member = await reaction.message.guild.members.fetch(user.id);
+  await member.roles.remove(roleData.roleId);
+});
+
+client.login(token);

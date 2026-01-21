@@ -39,6 +39,8 @@ export const roleConfigs = pgTable("role_configs", {
   isAutoRole: boolean("is_auto_role").default(false), // Assign on join?
   rank: integer("rank").default(0), // Higher rank = more perms
   permissions: jsonb("permissions"), // JSON of allowed actions/perms
+  reactionMessageId: text("reaction_message_id"), // For reaction roles
+  reactionEmoji: text("reaction_emoji"), // For reaction roles
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

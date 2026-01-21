@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events, Partials, Message, PermissionsBitField, SlashCommandBuilder, REST, Routes, ChatInputCommandInteraction, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, InteractionType } from "discord.js";
+import { Client, GatewayIntentBits, Events, Partials, Message, PermissionsBitField, SlashCommandBuilder, REST, Routes, ChatInputCommandInteraction, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, InteractionType, PermissionFlagsBits, MessageReaction, User } from "discord.js";
 import { storage } from "./storage";
 import { OpenAI } from "openai";
 
@@ -20,16 +20,19 @@ export function initializeBot() {
     baseURL: process.env.OPENAI_BASE_URL || "https://api.replit.com/v1", // Fallback, usually auto-injected
   });
 
-  client = new Client({
+  const clientOptions = {
     intents: [
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
       GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildModeration,
+      GatewayIntentBits.GuildMessageReactions,
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
-  });
+  };
+
+  client = new Client(clientOptions);
 
   client.on(Events.ClientReady, async (c) => {
     console.log(`Ready! Logged in as ${c.user.tag}`);
@@ -133,6 +136,10 @@ export function initializeBot() {
     }
   });
 
+  // Handle Reactions
+  client.on(Events.MessageReactionAdd, handleReactionAdd);
+  client.on(Events.MessageReactionRemove, handleReactionRemove);
+
   client.login(process.env.DISCORD_TOKEN).catch(err => {
     console.error("Failed to login to Discord:", err);
   });
@@ -180,6 +187,26 @@ async function registerSlashCommands(clientId: string) {
             opt.setName('query')
               .setDescription('Search keyword')
               .setRequired(true))),
+    new SlashCommandBuilder()
+      .setName('reactionrole')
+      .setDescription('Create a reaction role panel')
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .addStringOption(opt =>
+        opt.setName('title')
+          .setDescription('Panel title')
+          .setRequired(true))
+      .addStringOption(opt =>
+        opt.setName('description')
+          .setDescription('Panel description')
+          .setRequired(true))
+      .addStringOption(opt =>
+        opt.setName('emoji')
+          .setDescription('Emoji for the role')
+          .setRequired(true))
+      .addRoleOption(opt =>
+        opt.setName('role')
+          .setDescription('Role to assign')
+          .setRequired(true)),
   ].map(command => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
@@ -293,77 +320,61 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
     await interaction.reply('Pong!');
   }
 
-  if (commandName === 'note') {
-    const subcommand = interaction.options.getSubcommand();
-
-    if (subcommand === 'create') {
-      const modal = new ModalBuilder()
-        .setCustomId('noteModal')
-        .setTitle('Note Report Form');
-
-      const titleInput = new TextInputBuilder()
-        .setCustomId('noteTitle')
-        .setLabel('Title')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true);
-
-      const subjectInput = new TextInputBuilder()
-        .setCustomId('noteSubject')
-        .setLabel('Subject / Person')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true);
-
-      const detailsInput = new TextInputBuilder()
-        .setCustomId('noteDetails')
-        .setLabel('Details')
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(true);
-
-      const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(titleInput);
-      const row2 = new ActionRowBuilder<TextInputBuilder>().addComponents(subjectInput);
-      const row3 = new ActionRowBuilder<TextInputBuilder>().addComponents(detailsInput);
-
-      modal.addComponents(row1, row2, row3);
-
-      await interaction.showModal(modal);
-    } else if (subcommand === 'search') {
-      const query = interaction.options.getString('query', true).toLowerCase();
-
-      // Fetch logs of type 'note_report' from storage
-      const logs = await storage.getLogs();
-      const results = logs.filter(log => {
-        if (log.type !== 'note_report') return false;
-        const metadata = log.metadata as any;
-        return (
-          metadata?.title?.toLowerCase().includes(query) ||
-          metadata?.subject?.toLowerCase().includes(query) ||
-          metadata?.details?.toLowerCase().includes(query) ||
-          log.username?.toLowerCase().includes(query)
-        );
-      });
-
-      if (!results.length) {
-        return interaction.reply({
-          content: '🔍 No matching notes found.',
-          ephemeral: true
-        });
-      }
-
-      const list = results.map(n => {
-        const meta = n.metadata as any;
-        return `**ID ${n.id}** — ${meta?.title || 'No Title'}\nSubject: ${meta?.subject || 'Unknown'}\nAuthor: ${n.username}`;
-      }).join('\n\n');
-
-      const embed = new EmbedBuilder()
-        .setTitle(`🔍 Search Results (${results.length})`)
-        .setDescription(list.substring(0, 4000))
-        .setColor('Purple');
-
-      return interaction.reply({
-        embeds: [embed],
-        ephemeral: true
-      });
+  if (commandName === 'reactionrole') {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: 'Admins only.', ephemeral: true });
     }
+
+    const title = interaction.options.getString('title', true);
+    const description = interaction.options.getString('description', true);
+    const emoji = interaction.options.getString('emoji', true);
+    const role = interaction.options.getRole('role', true);
+
+    const embed = new EmbedBuilder()
+      .setTitle(title)
+      .setDescription(`${description}\n\nReact with ${emoji} to get **${role.name}**`)
+      .setColor('Blue');
+
+    const message = await interaction.channel?.send({ embeds: [embed] });
+    if (message) {
+      await message.react(emoji);
+
+      await storage.createRoleConfig({
+        roleId: role.id,
+        roleName: role.name,
+        reactionMessageId: message.id,
+        reactionEmoji: emoji,
+        rank: 0,
+        isAutoRole: false,
+        permissions: {},
+      });
+
+      await interaction.reply({ content: '✅ Reaction role panel created.', ephemeral: true });
+    } else {
+      await interaction.reply({ content: '❌ Failed to create panel.', ephemeral: true });
+    }
+  }
+}
+
+async function handleReactionAdd(reaction: MessageReaction, user: User) {
+  if (user.bot) return;
+  if (reaction.partial) await reaction.fetch();
+
+  const rc = await (storage as any).getRoleConfigByReaction(reaction.message.id, reaction.emoji.name || "");
+  if (rc) {
+    const member = await reaction.message.guild?.members.fetch(user.id);
+    if (member) await member.roles.add(rc.roleId);
+  }
+}
+
+async function handleReactionRemove(reaction: MessageReaction, user: User) {
+  if (user.bot) return;
+  if (reaction.partial) await reaction.fetch();
+
+  const rc = await (storage as any).getRoleConfigByReaction(reaction.message.id, reaction.emoji.name || "");
+  if (rc) {
+    const member = await reaction.message.guild?.members.fetch(user.id);
+    if (member) await member.roles.remove(rc.roleId);
   }
 }
 

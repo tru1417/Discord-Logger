@@ -98,6 +98,13 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(roleConfigs).orderBy(desc(roleConfigs.rank));
   }
 
+  async getRoleConfigByReaction(messageId: string, emoji: string): Promise<RoleConfig | undefined> {
+    const [rc] = await db.select().from(roleConfigs)
+      .where(eq(roleConfigs.reactionMessageId, messageId))
+      .where(eq(roleConfigs.reactionEmoji, emoji));
+    return rc;
+  }
+
   async updateRoleConfig(id: number, r: Partial<InsertRoleConfig>): Promise<RoleConfig> {
     const [updated] = await db.update(roleConfigs)
       .set(r)
