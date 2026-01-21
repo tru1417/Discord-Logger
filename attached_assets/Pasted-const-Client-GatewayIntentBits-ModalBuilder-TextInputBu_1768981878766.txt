@@ -1,0 +1,171 @@
+const {
+  Client,
+  GatewayIntentBits,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ActionRowBuilder,
+  EmbedBuilder,
+  InteractionType,
+  PermissionFlagsBits
+} = require('discord.js');
+
+const fs = require('fs');
+const { token, staffChannelId } = require('./config.json');
+
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+function loadNotes() {
+  return JSON.parse(fs.readFileSync('./notes.json'));
+}
+
+function saveNotes(notes) {
+  fs.writeFileSync('./notes.json', JSON.stringify(notes, null, 2));
+}
+
+function isStaff(member) {
+  return member.permissions.has(PermissionFlagsBits.Administrator) ||
+         member.permissions.has(PermissionFlagsBits.ManageMessages);
+}
+
+client.once('ready', () => {
+  console.log(`Logged in as ${client.user.tag}`);
+});
+
+client.on('interactionCreate', async interaction => {
+
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== 'note') return;
+
+  if (!isStaff(interaction.member)) {
+    return interaction.reply({
+      content: '❌ Staff only command.',
+      ephemeral: true
+    });
+  }
+
+  const sub = interaction.options.getSubcommand();
+  let notes = loadNotes();
+
+  // CREATE NOTE (Modal)
+  if (sub === 'create') {
+    const modal = new ModalBuilder()
+      .setCustomId('noteCreateModal')
+      .setTitle('Create Staff Note');
+
+    const title = new TextInputBuilder()
+      .setCustomId('title')
+      .setLabel('Title')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+
+    const subject = new TextInputBuilder()
+      .setCustomId('subject')
+      .setLabel('Subject / User')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+
+    const details = new TextInputBuilder()
+      .setCustomId('details')
+      .setLabel('Details')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true);
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(title),
+      new ActionRowBuilder().addComponents(subject),
+      new ActionRowBuilder().addComponents(details)
+    );
+
+    await interaction.showModal(modal);
+  }
+
+  // LIST NOTES
+  if (sub === 'list') {
+    if (!notes.length) return interaction.reply({ content: 'No notes found.', ephemeral: true });
+
+    const list = notes.map(n => `**ID ${n.id}** — ${n.title}`).join('\n');
+
+    const embed = new EmbedBuilder()
+      .setTitle('📒 Staff Notes')
+      .setDescription(list)
+      .setColor('DarkGrey');
+
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  // VIEW NOTE
+  if (sub === 'view') {
+    const id = interaction.options.getInteger('id');
+    const note = notes.find(n => n.id === id);
+
+    if (!note) return interaction.reply({ content: 'Note not found.', ephemeral: true });
+
+    const embed = new EmbedBuilder()
+      .setTitle(`📝 Note #${note.id}`)
+      .addFields(
+        { name: 'Title', value: note.title },
+        { name: 'Subject', value: note.subject },
+        { name: 'Details', value: note.details },
+        { name: 'Author', value: note.author }
+      )
+      .setTimestamp(note.date)
+      .setColor('Blue');
+
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  // DELETE NOTE
+  if (sub === 'delete') {
+    const id = interaction.options.getInteger('id');
+    const filtered = notes.filter(n => n.id !== id);
+
+    if (filtered.length === notes.length)
+      return interaction.reply({ content: 'Note not found.', ephemeral: true });
+
+    saveNotes(filtered);
+    return interaction.reply({ content: `🗑️ Note #${id} deleted.`, ephemeral: true });
+  }
+
+});
+
+
+// MODAL SUBMIT HANDLER
+client.on('interactionCreate', async interaction => {
+  if (interaction.type !== InteractionType.ModalSubmit) return;
+
+  if (interaction.customId === 'noteCreateModal') {
+    let notes = loadNotes();
+
+    const newNote = {
+      id: notes.length ? notes[notes.length - 1].id + 1 : 1,
+      title: interaction.fields.getTextInputValue('title'),
+      subject: interaction.fields.getTextInputValue('subject'),
+      details: interaction.fields.getTextInputValue('details'),
+      author: interaction.user.tag,
+      date: new Date().toISOString()
+    };
+
+    notes.push(newNote);
+    saveNotes(notes);
+
+    const embed = new EmbedBuilder()
+      .setTitle('✅ Staff Note Created')
+      .addFields(
+        { name: 'ID', value: String(newNote.id) },
+        { name: 'Title', value: newNote.title },
+        { name: 'Subject', value: newNote.subject }
+      )
+      .setColor('Green');
+
+    const staffChannel = await client.channels.fetch(staffChannelId);
+    staffChannel.send({ embeds: [embed] });
+
+    await interaction.reply({
+      content: `✅ Note #${newNote.id} saved.`,
+      ephemeral: true
+    });
+  }
+});
+
+client.login(token);
