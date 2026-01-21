@@ -1,0 +1,87 @@
+const {
+  Client,
+  GatewayIntentBits,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ActionRowBuilder,
+  EmbedBuilder,
+  InteractionType
+} = require('discord.js');
+
+const { token } = require('./config.json');
+
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds]
+});
+
+client.once('ready', () => {
+  console.log(`Logged in as ${client.user.tag}`);
+});
+
+client.on('interactionCreate', async interaction => {
+
+  // Slash Command
+  if (interaction.isChatInputCommand()) {
+    if (interaction.commandName === 'note') {
+
+      const modal = new ModalBuilder()
+        .setCustomId('noteModal')
+        .setTitle('Note Report Form');
+
+      const titleInput = new TextInputBuilder()
+        .setCustomId('noteTitle')
+        .setLabel('Title')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      const subjectInput = new TextInputBuilder()
+        .setCustomId('noteSubject')
+        .setLabel('Subject / Person')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      const detailsInput = new TextInputBuilder()
+        .setCustomId('noteDetails')
+        .setLabel('Details')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true);
+
+      const row1 = new ActionRowBuilder().addComponents(titleInput);
+      const row2 = new ActionRowBuilder().addComponents(subjectInput);
+      const row3 = new ActionRowBuilder().addComponents(detailsInput);
+
+      modal.addComponents(row1, row2, row3);
+
+      await interaction.showModal(modal);
+    }
+  }
+
+  // Modal Submit
+  if (interaction.type === InteractionType.ModalSubmit) {
+    if (interaction.customId === 'noteModal') {
+
+      const title = interaction.fields.getTextInputValue('noteTitle');
+      const subject = interaction.fields.getTextInputValue('noteSubject');
+      const details = interaction.fields.getTextInputValue('noteDetails');
+
+      const embed = new EmbedBuilder()
+        .setTitle('📝 Note Report')
+        .addFields(
+          { name: 'Title', value: title },
+          { name: 'Subject', value: subject },
+          { name: 'Details', value: details }
+        )
+        .setFooter({ text: `Submitted by ${interaction.user.tag}` })
+        .setTimestamp()
+        .setColor('Blue');
+
+      await interaction.reply({
+        embeds: [embed]
+      });
+    }
+  }
+
+});
+
+client.login(token);

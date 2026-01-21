@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events, Partials, Message, PermissionsBitField, SlashCommandBuilder, REST, Routes, ChatInputCommandInteraction } from "discord.js";
+import { Client, GatewayIntentBits, Events, Partials, Message, PermissionsBitField, SlashCommandBuilder, REST, Routes, ChatInputCommandInteraction, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, InteractionType } from "discord.js";
 import { storage } from "./storage";
 import { OpenAI } from "openai";
 
@@ -126,8 +126,11 @@ export function initializeBot() {
 
   // Handle Slash Commands
   client.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-    await handleSlashCommand(interaction);
+    if (interaction.isChatInputCommand()) {
+      await handleSlashCommand(interaction);
+    } else if (interaction.type === InteractionType.ModalSubmit) {
+      await handleModalSubmit(interaction);
+    }
   });
 
   client.login(process.env.DISCORD_TOKEN).catch(err => {
@@ -164,6 +167,9 @@ async function registerSlashCommands(clientId: string) {
     new SlashCommandBuilder()
       .setName('ping')
       .setDescription('Replies with Pong!'),
+    new SlashCommandBuilder()
+      .setName('note')
+      .setDescription('Create a note report form'),
   ].map(command => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
@@ -275,6 +281,70 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
   if (commandName === 'ping') {
     await interaction.reply('Pong!');
+  }
+
+  if (commandName === 'note') {
+    const modal = new ModalBuilder()
+      .setCustomId('noteModal')
+      .setTitle('Note Report Form');
+
+    const titleInput = new TextInputBuilder()
+      .setCustomId('noteTitle')
+      .setLabel('Title')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+
+    const subjectInput = new TextInputBuilder()
+      .setCustomId('noteSubject')
+      .setLabel('Subject / Person')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+
+    const detailsInput = new TextInputBuilder()
+      .setCustomId('noteDetails')
+      .setLabel('Details')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true);
+
+    const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(titleInput);
+    const row2 = new ActionRowBuilder<TextInputBuilder>().addComponents(subjectInput);
+    const row3 = new ActionRowBuilder<TextInputBuilder>().addComponents(detailsInput);
+
+    modal.addComponents(row1, row2, row3);
+
+    await interaction.showModal(modal);
+  }
+}
+
+async function handleModalSubmit(interaction: any) {
+  if (interaction.customId === 'noteModal') {
+    const title = interaction.fields.getTextInputValue('noteTitle');
+    const subject = interaction.fields.getTextInputValue('noteSubject');
+    const details = interaction.fields.getTextInputValue('noteDetails');
+
+    const embed = new EmbedBuilder()
+      .setTitle('📝 Note Report')
+      .addFields(
+        { name: 'Title', value: title },
+        { name: 'Subject', value: subject },
+        { name: 'Details', value: details }
+      )
+      .setFooter({ text: `Submitted by ${interaction.user.tag}` })
+      .setTimestamp()
+      .setColor('Blue');
+
+    await interaction.reply({
+      embeds: [embed]
+    });
+    
+    // Log the note to the dashboard
+    await storage.createLog({
+      type: 'note_report',
+      content: `Note Report submitted by ${interaction.user.tag}: ${title}`,
+      userId: interaction.user.id,
+      username: interaction.user.tag,
+      metadata: { title, subject, details },
+    });
   }
 }
 
