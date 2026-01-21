@@ -169,7 +169,17 @@ async function registerSlashCommands(clientId: string) {
       .setDescription('Replies with Pong!'),
     new SlashCommandBuilder()
       .setName('note')
-      .setDescription('Create a note report form'),
+      .setDescription('Staff notes management')
+      .addSubcommand(sub =>
+        sub.setName('create')
+          .setDescription('Create a note report form'))
+      .addSubcommand(sub =>
+        sub.setName('search')
+          .setDescription('Search staff notes')
+          .addStringOption(opt =>
+            opt.setName('query')
+              .setDescription('Search keyword')
+              .setRequired(true))),
   ].map(command => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
@@ -284,35 +294,76 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
   }
 
   if (commandName === 'note') {
-    const modal = new ModalBuilder()
-      .setCustomId('noteModal')
-      .setTitle('Note Report Form');
+    const subcommand = interaction.options.getSubcommand();
 
-    const titleInput = new TextInputBuilder()
-      .setCustomId('noteTitle')
-      .setLabel('Title')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true);
+    if (subcommand === 'create') {
+      const modal = new ModalBuilder()
+        .setCustomId('noteModal')
+        .setTitle('Note Report Form');
 
-    const subjectInput = new TextInputBuilder()
-      .setCustomId('noteSubject')
-      .setLabel('Subject / Person')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true);
+      const titleInput = new TextInputBuilder()
+        .setCustomId('noteTitle')
+        .setLabel('Title')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
 
-    const detailsInput = new TextInputBuilder()
-      .setCustomId('noteDetails')
-      .setLabel('Details')
-      .setStyle(TextInputStyle.Paragraph)
-      .setRequired(true);
+      const subjectInput = new TextInputBuilder()
+        .setCustomId('noteSubject')
+        .setLabel('Subject / Person')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
 
-    const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(titleInput);
-    const row2 = new ActionRowBuilder<TextInputBuilder>().addComponents(subjectInput);
-    const row3 = new ActionRowBuilder<TextInputBuilder>().addComponents(detailsInput);
+      const detailsInput = new TextInputBuilder()
+        .setCustomId('noteDetails')
+        .setLabel('Details')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true);
 
-    modal.addComponents(row1, row2, row3);
+      const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(titleInput);
+      const row2 = new ActionRowBuilder<TextInputBuilder>().addComponents(subjectInput);
+      const row3 = new ActionRowBuilder<TextInputBuilder>().addComponents(detailsInput);
 
-    await interaction.showModal(modal);
+      modal.addComponents(row1, row2, row3);
+
+      await interaction.showModal(modal);
+    } else if (subcommand === 'search') {
+      const query = interaction.options.getString('query', true).toLowerCase();
+
+      // Fetch logs of type 'note_report' from storage
+      const logs = await storage.getLogs();
+      const results = logs.filter(log => {
+        if (log.type !== 'note_report') return false;
+        const metadata = log.metadata as any;
+        return (
+          metadata?.title?.toLowerCase().includes(query) ||
+          metadata?.subject?.toLowerCase().includes(query) ||
+          metadata?.details?.toLowerCase().includes(query) ||
+          log.username?.toLowerCase().includes(query)
+        );
+      });
+
+      if (!results.length) {
+        return interaction.reply({
+          content: '🔍 No matching notes found.',
+          ephemeral: true
+        });
+      }
+
+      const list = results.map(n => {
+        const meta = n.metadata as any;
+        return `**ID ${n.id}** — ${meta?.title || 'No Title'}\nSubject: ${meta?.subject || 'Unknown'}\nAuthor: ${n.username}`;
+      }).join('\n\n');
+
+      const embed = new EmbedBuilder()
+        .setTitle(`🔍 Search Results (${results.length})`)
+        .setDescription(list.substring(0, 4000))
+        .setColor('Purple');
+
+      return interaction.reply({
+        embeds: [embed],
+        ephemeral: true
+      });
+    }
   }
 }
 
