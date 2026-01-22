@@ -310,8 +310,17 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
       : 'Dashboard URL not configured.';
     
+    const embed = new EmbedBuilder()
+      .setTitle("📊 Bot Dashboard")
+      .setDescription(
+        `Click the link below to access the dashboard:\n\n🔗 **[Open Dashboard](${dashboardUrl})**`
+      )
+      .setColor(0x2f3136)
+      .setFooter({ text: "Dashboard Access" })
+      .setTimestamp();
+
     await interaction.reply({
-      content: `🔗 **Moderation Dashboard**: ${dashboardUrl}`,
+      embeds: [embed],
       flags: [MessageFlags.Ephemeral]
     });
   }
