@@ -175,6 +175,26 @@ async function registerSlashCommands(clientId: string) {
       .setName('ping')
       .setDescription('Replies with Pong!'),
     new SlashCommandBuilder()
+      .setName('announce')
+      .setDescription('Create a structured announcement')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+      .addStringOption(option =>
+        option.setName('title').setDescription('Heading / title of the announcement').setRequired(true))
+      .addStringOption(option =>
+        option.setName('message').setDescription('Main announcement message').setRequired(true))
+      .addStringOption(option =>
+        option.setName('point1').setDescription('Announcement point #1').setRequired(false))
+      .addStringOption(option =>
+        option.setName('point2').setDescription('Announcement point #2').setRequired(false))
+      .addStringOption(option =>
+        option.setName('point3').setDescription('Announcement point #3').setRequired(false))
+      .addStringOption(option =>
+        option.setName('point4').setDescription('Announcement point #4').setRequired(false))
+      .addStringOption(option =>
+        option.setName('point5').setDescription('Announcement point #5').setRequired(false))
+      .addBooleanOption(option =>
+        option.setName('ping').setDescription('Ping @everyone?').setRequired(false)),
+    new SlashCommandBuilder()
       .setName('note')
       .setDescription('Staff notes management')
       .addSubcommand(sub =>
@@ -327,6 +347,42 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
   if (commandName === 'ping') {
     await interaction.reply('Pong!');
+  }
+
+  if (commandName === 'announce') {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      return interaction.reply({ content: 'You do not have permission to use this command.', flags: [MessageFlags.Ephemeral] });
+    }
+
+    const title = options.getString('title', true);
+    const message = options.getString('message', true);
+    const ping = options.getBoolean('ping') || false;
+
+    const points = [];
+    for (let i = 1; i <= 5; i++) {
+      const point = options.getString(`point${i}`);
+      if (point) points.push(`**${i}.** ${point}`);
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle(`📢 ${title}`)
+      .setDescription(message)
+      .setColor(0xff0000)
+      .setFooter({ text: `Announcement by ${user.tag}` })
+      .setTimestamp();
+
+    if (points.length > 0) {
+      embed.addFields({
+        name: '📌 Details',
+        value: points.join('\n'),
+      });
+    }
+
+    await interaction.reply({
+      content: ping ? '@everyone' : null,
+      embeds: [embed],
+      allowedMentions: { parse: ping ? ['everyone'] : [] }
+    });
   }
 
   if (commandName === 'reactionrole') {
