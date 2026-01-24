@@ -182,6 +182,8 @@ async function registerSlashCommands(clientId: string) {
         option.setName('title').setDescription('Heading / title of the announcement').setRequired(true))
       .addStringOption(option =>
         option.setName('message').setDescription('Main announcement message').setRequired(true))
+      .addChannelOption(option =>
+        option.setName('channel').setDescription('Channel to send the announcement in').setRequired(false))
       .addStringOption(option =>
         option.setName('point1').setDescription('Announcement point #1').setRequired(false))
       .addStringOption(option =>
@@ -356,7 +358,12 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
     const title = options.getString('title', true);
     const message = options.getString('message', true);
+    const targetChannel = options.getChannel('channel') || interaction.channel;
     const ping = options.getBoolean('ping') || false;
+
+    if (!targetChannel || !('send' in targetChannel)) {
+      return interaction.reply({ content: '❌ Invalid channel selected.', flags: [MessageFlags.Ephemeral] });
+    }
 
     const points = [];
     for (let i = 1; i <= 5; i++) {
@@ -378,11 +385,24 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       });
     }
 
-    await interaction.reply({
-      content: ping ? '@everyone' : null,
-      embeds: [embed],
-      allowedMentions: { parse: ping ? ['everyone'] : [] }
-    });
+    try {
+      await (targetChannel as any).send({
+        content: ping ? '@everyone' : null,
+        embeds: [embed],
+        allowedMentions: { parse: ping ? ['everyone'] : [] }
+      });
+
+      await interaction.reply({
+        content: `✅ Announcement sent to <#${targetChannel.id}>`,
+        flags: [MessageFlags.Ephemeral]
+      });
+    } catch (error) {
+      console.error('Failed to send announcement:', error);
+      await interaction.reply({
+        content: '❌ Failed to send announcement. Make sure I have permission to send messages in that channel.',
+        flags: [MessageFlags.Ephemeral]
+      });
+    }
   }
 
   if (commandName === 'reactionrole') {
