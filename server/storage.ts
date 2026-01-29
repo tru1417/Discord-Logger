@@ -7,7 +7,7 @@ import {
   type RoleConfig, type InsertRoleConfig,
   type Setting, type InsertSetting
 } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 
 export interface IStorage {
   // Logs
@@ -19,7 +19,7 @@ export interface IStorage {
   createCase(c: InsertCase): Promise<Case>;
   getCases(limit?: number): Promise<Case[]>;
   getCase(id: number): Promise<Case | undefined>;
-  getCasesByTarget(targetId: string): Promise<Case[]>;
+  getCasesByUser(userId: string): Promise<Case[]>;
   updateCase(id: number, c: Partial<InsertCase>): Promise<Case>;
   deleteCase(id: number): Promise<void>;
 
@@ -113,10 +113,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getRoleConfigByReaction(messageId: string, emoji: string): Promise<RoleConfig | undefined> {
-    const [rc] = await db.select().from(roleConfigs)
-      .where(eq(roleConfigs.reactionMessageId, messageId))
-      .where(eq(roleConfigs.reactionEmoji, emoji));
-    return rc;
+    const results = await db.select().from(roleConfigs)
+      .where(and(
+        eq(roleConfigs.reactionMessageId, messageId),
+        eq(roleConfigs.reactionEmoji, emoji)
+      ));
+    return results[0];
   }
 
   async updateRoleConfig(id: number, r: Partial<InsertRoleConfig>): Promise<RoleConfig> {
