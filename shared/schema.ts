@@ -21,6 +21,7 @@ export const cases = pgTable("cases", {
   targetId: text("target_id").notNull(),
   targetName: text("target_name").notNull(),
   active: boolean("active").default(true),
+  metadata: jsonb("metadata"),
   timestamp: timestamp("timestamp").defaultNow().notNull(),
 });
 

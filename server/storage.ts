@@ -13,13 +13,15 @@ export interface IStorage {
   // Logs
   createLog(log: InsertLog): Promise<Log>;
   getLogs(limit?: number): Promise<Log[]>;
-  getLogsByUser(userId: string): Promise<Log[]>;
+  getCasesByUser(userId: string): Promise<Case[]>;
 
   // Cases
   createCase(c: InsertCase): Promise<Case>;
   getCases(limit?: number): Promise<Case[]>;
   getCase(id: number): Promise<Case | undefined>;
   getCasesByTarget(targetId: string): Promise<Case[]>;
+  updateCase(id: number, c: Partial<InsertCase>): Promise<Case>;
+  deleteCase(id: number): Promise<void>;
 
   // Rules
   createRule(r: InsertRule): Promise<Rule>;
@@ -70,10 +72,22 @@ export class DatabaseStorage implements IStorage {
     return c;
   }
 
-  async getCasesByTarget(targetId: string): Promise<Case[]> {
+  async getCasesByUser(userId: string): Promise<Case[]> {
     return await db.select().from(cases)
-      .where(eq(cases.targetId, targetId))
+      .where(eq(cases.targetId, userId))
       .orderBy(desc(cases.timestamp));
+  }
+
+  async updateCase(id: number, c: Partial<InsertCase>): Promise<Case> {
+    const [updated] = await db.update(cases)
+      .set(c)
+      .where(eq(cases.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteCase(id: number): Promise<void> {
+    await db.delete(cases).where(eq(cases.id, id));
   }
 
   async createRule(r: InsertRule): Promise<Rule> {

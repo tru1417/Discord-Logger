@@ -175,6 +175,36 @@ async function registerSlashCommands(clientId: string) {
       .setName('ping')
       .setDescription('Replies with Pong!'),
     new SlashCommandBuilder()
+      .setName('cad')
+      .setDescription('CAD System for incident reports')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+      .addSubcommand(sub =>
+        sub.setName('add')
+          .setDescription('Create a new incident report')
+          .addUserOption(opt => opt.setName('user').setDescription('Subject of the report').setRequired(true))
+          .addIntegerOption(opt => opt.setName('priority').setDescription('Priority (1-5)').setRequired(true).setMinValue(1).setMaxValue(5))
+          .addStringOption(opt => opt.setName('summary').setDescription('Incident summary').setRequired(true)))
+      .addSubcommand(sub =>
+        sub.setName('search')
+          .setDescription('Search existing reports')
+          .addStringOption(opt => opt.setName('case_id').setDescription('Case ID to search').setRequired(false))
+          .addUserOption(opt => opt.setName('user').setDescription('User to search reports for').setRequired(false)))
+      .addSubcommand(sub =>
+        sub.setName('edit')
+          .setDescription('Modify a report')
+          .addStringOption(opt => opt.setName('case_id').setDescription('Case ID').setRequired(true))
+          .addStringOption(opt => opt.setName('status').setDescription('New status').setRequired(false).addChoices({ name: 'Open', value: 'Open' }, { name: 'Closed', value: 'Closed' }))
+          .addIntegerOption(opt => opt.setName('priority').setDescription('New priority (1-5)').setRequired(false).setMinValue(1).setMaxValue(5))
+          .addStringOption(opt => opt.setName('summary').setDescription('New summary').setRequired(false)))
+      .addSubcommand(sub =>
+        sub.setName('delete')
+          .setDescription('Remove a report')
+          .addStringOption(opt => opt.setName('case_id').setDescription('Case ID').setRequired(true)))
+      .addSubcommand(sub =>
+        sub.setName('close')
+          .setDescription('Close an active report')
+          .addStringOption(opt => opt.setName('case_id').setDescription('Case ID').setRequired(true))),
+    new SlashCommandBuilder()
       .setName('announce')
       .setDescription('Create a structured announcement')
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
@@ -349,6 +379,132 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
   if (commandName === 'ping') {
     await interaction.reply('Pong!');
+  }
+
+  if (commandName === 'cad') {
+    const subcommand = options.getSubcommand();
+
+    if (subcommand === 'add') {
+      const targetUser = options.getUser('user', true);
+      const priority = options.getInteger('priority', true);
+      const summary = options.getString('summary', true);
+      const caseId = `CAD-${new Date().getFullYear()}-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`;
+
+      await storage.createCase({
+        type: 'cad_report',
+        targetId: targetUser.id,
+        targetName: targetUser.tag,
+        moderatorId: user.id,
+        moderatorName: user.tag,
+        reason: summary,
+        active: true,
+        metadata: { caseId, priority, status: 'Open' }
+      });
+
+      const embed = new EmbedBuilder()
+        .setTitle("🚓 CAD INCIDENT REPORT")
+        .setColor(0x243b55)
+        .addFields(
+          { name: "Case #", value: caseId, inline: true },
+          { name: "Status", value: "🟡 Open", inline: true },
+          { name: "Priority", value: priority.toString(), inline: true },
+          { name: "Subject", value: `<@${targetUser.id}>` },
+          { name: "Reporting Officer", value: `<@${user.id}>` },
+          { name: "Incident Summary", value: summary }
+        )
+        .setFooter({ text: "CAD Report Logged Automatically" })
+        .setTimestamp();
+
+      return interaction.reply({ embeds: [embed] });
+    }
+
+    if (subcommand === 'search') {
+      const caseId = options.getString('case_id');
+      const targetUser = options.getUser('user');
+      const allCases = await storage.getCases();
+      
+      const results = allCases.filter(c => {
+        if (c.type !== 'cad_report') return false;
+        const meta = c.metadata as any;
+        if (caseId && meta?.caseId !== caseId) return false;
+        if (targetUser && c.targetId !== targetUser.id) return false;
+        return true;
+      });
+
+      if (results.length === 0) {
+        return interaction.reply({ content: '🔍 No matching CAD reports found.', flags: [MessageFlags.Ephemeral] });
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle("🔍 CAD SEARCH RESULTS")
+        .setColor(0x2b3a67)
+        .setDescription(results.map(r => {
+          const meta = r.metadata as any;
+          return `**${meta?.caseId}** - ${meta?.status} (P${meta?.priority})\nSubject: ${r.targetName}\nSummary: ${r.reason ? r.reason.substring(0, 50) : 'No summary'}...`;
+        }).join('\n\n'))
+        .setFooter({ text: "CAD Search Module" });
+
+      return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+    }
+
+    if (subcommand === 'edit') {
+      const caseId = options.getString('case_id', true);
+      const status = options.getString('status');
+      const priority = options.getInteger('priority');
+      const summary = options.getString('summary');
+
+      const allCases = await storage.getCases();
+      const report = allCases.find(c => (c.metadata as any)?.caseId === caseId);
+
+      if (!report) {
+        return interaction.reply({ content: '❌ Report not found.', flags: [MessageFlags.Ephemeral] });
+      }
+
+      const meta = report.metadata as any;
+      if (status) meta.status = status;
+      if (priority) meta.priority = priority;
+      
+      await storage.updateCase(report.id, {
+        reason: summary || report.reason,
+        active: status === 'Open',
+        metadata: meta
+      });
+
+      return interaction.reply({ content: `✅ CAD Report ${caseId} updated.`, flags: [MessageFlags.Ephemeral] });
+    }
+
+    if (subcommand === 'close') {
+      const caseId = options.getString('case_id', true);
+      const allCases = await storage.getCases();
+      const report = allCases.find(c => (c.metadata as any)?.caseId === caseId);
+
+      if (!report) {
+        return interaction.reply({ content: '❌ Report not found.', flags: [MessageFlags.Ephemeral] });
+      }
+
+      const meta = report.metadata as any;
+      meta.status = 'Closed';
+      
+      await storage.updateCase(report.id, {
+        active: false,
+        metadata: meta
+      });
+
+      return interaction.reply({ content: `✅ CAD Report ${caseId} has been closed.`, flags: [MessageFlags.Ephemeral] });
+    }
+
+    if (subcommand === 'delete') {
+      const caseId = options.getString('case_id', true);
+      const allCases = await storage.getCases();
+      const report = allCases.find(c => (c.metadata as any)?.caseId === caseId);
+
+      if (!report) {
+        return interaction.reply({ content: '❌ Report not found.', flags: [MessageFlags.Ephemeral] });
+      }
+
+      await storage.deleteCase(report.id);
+      return interaction.reply({ content: `🗑️ CAD Report ${caseId} deleted.`, flags: [MessageFlags.Ephemeral] });
+    }
   }
 
   if (commandName === 'announce') {
