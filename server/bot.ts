@@ -130,6 +130,43 @@ export function initializeBot() {
   // Handle Slash Commands
   client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isChatInputCommand()) {
+      // Command Logger System
+      try {
+        const logSetting = await storage.getSetting('command_log_channel');
+        const logChannelId = logSetting?.value;
+        if (logChannelId) {
+          const logChannel = interaction.guild?.channels.cache.get(logChannelId);
+          if (logChannel && 'send' in logChannel) {
+            const user = interaction.user;
+            let optionsUsed = "None";
+            if (interaction.options.data.length > 0) {
+              optionsUsed = interaction.options.data
+                .map(o => `${o.name}: ${o.value}`)
+                .join("\n");
+            }
+
+            const embed = new EmbedBuilder()
+              .setColor(0xff4d6d)
+              .setTitle("📜 Command Logger")
+              .addFields(
+                { name: "User", value: `${user.tag}`, inline: true },
+                { name: "User ID", value: `${user.id}`, inline: true },
+                { name: "Command", value: `/${interaction.commandName}`, inline: true },
+                { name: "Channel", value: `${interaction.channel}`, inline: true },
+                { name: "Server", value: `${interaction.guild?.name}`, inline: true },
+                { name: "Options", value: optionsUsed.substring(0, 1024) },
+                { name: "Time", value: `<t:${Math.floor(Date.now()/1000)}:F>` }
+              )
+              .setThumbnail(user.displayAvatarURL())
+              .setFooter({ text: "Command Logger System" });
+
+            await (logChannel as any).send({ embeds: [embed] });
+          }
+        }
+      } catch (error) {
+        console.error("Error in command logger:", error);
+      }
+
       await handleSlashCommand(interaction);
     } else if (interaction.type === InteractionType.ModalSubmit) {
       await handleModalSubmit(interaction);
