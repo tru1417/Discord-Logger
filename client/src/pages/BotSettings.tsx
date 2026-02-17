@@ -13,6 +13,7 @@ export default function BotSettings() {
   const { toast } = useToast();
   const [inviteLink, setInviteLink] = useState("");
   const [welcomeMessage, setWelcomeMessage] = useState("");
+  const [commandLogChannel, setCommandLogChannel] = useState("");
 
   const { data: inviteSetting } = useQuery<Setting>({
     queryKey: ["/api/settings/discord_invite_link"],
@@ -20,6 +21,10 @@ export default function BotSettings() {
 
   const { data: welcomeSetting } = useQuery<Setting>({
     queryKey: ["/api/settings/welcome_message"],
+  });
+
+  const { data: commandLogSetting } = useQuery<Setting>({
+    queryKey: ["/api/settings/command_log_channel"],
   });
 
   useEffect(() => {
@@ -34,6 +39,12 @@ export default function BotSettings() {
     }
   }, [welcomeSetting]);
 
+  useEffect(() => {
+    if (commandLogSetting) {
+      setCommandLogChannel(commandLogSetting.value);
+    }
+  }, [commandLogSetting]);
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       await Promise.all([
@@ -44,12 +55,17 @@ export default function BotSettings() {
         apiRequest("POST", "/api/settings", {
           key: "welcome_message",
           value: welcomeMessage,
+        }),
+        apiRequest("POST", "/api/settings", {
+          key: "command_log_channel",
+          value: commandLogChannel,
         })
       ]);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings/discord_invite_link"] });
       queryClient.invalidateQueries({ queryKey: ["/api/settings/welcome_message"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/command_log_channel"] });
       toast({
         title: "Settings Saved",
         description: "Your bot settings have been updated.",
@@ -93,6 +109,18 @@ export default function BotSettings() {
           <div className="space-y-2">
             <label className="text-xs font-bold text-gray-400 uppercase">Bot Nickname</label>
             <input type="text" defaultValue="AutoMod Bot" className="discord-input w-full" />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-gray-400 uppercase">Command Log Channel ID</label>
+            <input 
+              type="text" 
+              value={commandLogChannel}
+              onChange={(e) => setCommandLogChannel(e.target.value)}
+              placeholder="123456789012345678" 
+              className="discord-input w-full" 
+            />
+            <p className="text-xs text-gray-500">Logs all slash command usage to this channel.</p>
           </div>
 
           <div className="space-y-2">
