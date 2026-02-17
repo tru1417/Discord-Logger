@@ -175,8 +175,8 @@ async function registerSlashCommands(clientId: string) {
       .setName('ping')
       .setDescription('Replies with Pong!'),
     new SlashCommandBuilder()
-      .setName('cad')
-      .setDescription('CAD System for incident reports')
+      .setName('ars')
+      .setDescription('ARS System for incident reports')
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
       .addSubcommand(sub =>
         sub.setName('add')
@@ -381,17 +381,17 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
     await interaction.reply('Pong!');
   }
 
-  if (commandName === 'cad') {
+  if (commandName === 'ars') {
     const subcommand = options.getSubcommand();
 
     if (subcommand === 'add') {
       const targetUser = options.getUser('user', true);
       const priority = options.getInteger('priority', true);
       const summary = options.getString('summary', true);
-      const caseId = `CAD-${new Date().getFullYear()}-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`;
+      const caseId = `ARS-${new Date().getFullYear()}-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`;
 
       await storage.createCase({
-        type: 'cad_report',
+        type: 'ars_report',
         targetId: targetUser.id,
         targetName: targetUser.tag,
         moderatorId: user.id,
@@ -402,7 +402,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       });
 
       const embed = new EmbedBuilder()
-        .setTitle("🚓 CAD INCIDENT REPORT")
+        .setTitle("🚓 ARS INCIDENT REPORT")
         .setColor(0x243b55)
         .addFields(
           { name: "Case #", value: caseId, inline: true },
@@ -412,7 +412,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
           { name: "Reporting Officer", value: `<@${user.id}>` },
           { name: "Incident Summary", value: summary }
         )
-        .setFooter({ text: "CAD Report Logged Automatically" })
+        .setFooter({ text: "ARS Report Logged Automatically" })
         .setTimestamp();
 
       return interaction.reply({ embeds: [embed] });
@@ -424,7 +424,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       const allCases = await storage.getCases();
       
       const results = allCases.filter(c => {
-        if (c.type !== 'cad_report') return false;
+        if (c.type !== 'ars_report' && c.type !== 'cad_report') return false;
         const meta = c.metadata as any;
         if (caseId && meta?.caseId !== caseId) return false;
         if (targetUser && c.targetId !== targetUser.id) return false;
@@ -432,17 +432,17 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       });
 
       if (results.length === 0) {
-        return interaction.reply({ content: '🔍 No matching CAD reports found.', flags: [MessageFlags.Ephemeral] });
+        return interaction.reply({ content: '🔍 No matching ARS reports found.', flags: [MessageFlags.Ephemeral] });
       }
 
       const embed = new EmbedBuilder()
-        .setTitle("🔍 CAD SEARCH RESULTS")
+        .setTitle("🔍 ARS SEARCH RESULTS")
         .setColor(0x2b3a67)
         .setDescription(results.map(r => {
           const meta = r.metadata as any;
           return `**${meta?.caseId}** - ${meta?.status} (P${meta?.priority})\nSubject: ${r.targetName}\nSummary: ${r.reason ? r.reason.substring(0, 50) : 'No summary'}...`;
         }).join('\n\n'))
-        .setFooter({ text: "CAD Search Module" });
+        .setFooter({ text: "ARS Search Module" });
 
       return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
     }
@@ -470,7 +470,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
         metadata: meta
       });
 
-      return interaction.reply({ content: `✅ CAD Report ${caseId} updated.`, flags: [MessageFlags.Ephemeral] });
+      return interaction.reply({ content: `✅ ARS Report ${caseId} updated.`, flags: [MessageFlags.Ephemeral] });
     }
 
     if (subcommand === 'close') {
@@ -490,7 +490,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
         metadata: meta
       });
 
-      return interaction.reply({ content: `✅ CAD Report ${caseId} has been closed.`, flags: [MessageFlags.Ephemeral] });
+      return interaction.reply({ content: `✅ ARS Report ${caseId} has been closed.`, flags: [MessageFlags.Ephemeral] });
     }
 
     if (subcommand === 'delete') {
@@ -503,7 +503,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       }
 
       await storage.deleteCase(report.id);
-      return interaction.reply({ content: `🗑️ CAD Report ${caseId} deleted.`, flags: [MessageFlags.Ephemeral] });
+      return interaction.reply({ content: `🗑️ ARS Report ${caseId} deleted.`, flags: [MessageFlags.Ephemeral] });
     }
   }
 
