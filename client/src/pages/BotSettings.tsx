@@ -13,6 +13,7 @@ export default function BotSettings() {
   const { toast } = useToast();
   const [inviteLink, setInviteLink] = useState("");
   const [welcomeMessage, setWelcomeMessage] = useState("");
+  const [welcomeChannelId, setWelcomeChannelId] = useState("");
   const [commandLogChannel, setCommandLogChannel] = useState("");
 
   const { data: inviteSetting } = useQuery<Setting>({
@@ -21,6 +22,10 @@ export default function BotSettings() {
 
   const { data: welcomeSetting } = useQuery<Setting>({
     queryKey: ["/api/settings/welcome_message"],
+  });
+
+  const { data: welcomeChannelSetting } = useQuery<Setting>({
+    queryKey: ["/api/settings/welcome_channel_id"],
   });
 
   const { data: commandLogSetting } = useQuery<Setting>({
@@ -40,6 +45,12 @@ export default function BotSettings() {
   }, [welcomeSetting]);
 
   useEffect(() => {
+    if (welcomeChannelSetting) {
+      setWelcomeChannelId(welcomeChannelSetting.value);
+    }
+  }, [welcomeChannelSetting]);
+
+  useEffect(() => {
     if (commandLogSetting) {
       setCommandLogChannel(commandLogSetting.value);
     }
@@ -57,6 +68,10 @@ export default function BotSettings() {
           value: welcomeMessage,
         }),
         apiRequest("POST", "/api/settings", {
+          key: "welcome_channel_id",
+          value: welcomeChannelId,
+        }),
+        apiRequest("POST", "/api/settings", {
           key: "command_log_channel",
           value: commandLogChannel,
         })
@@ -65,6 +80,7 @@ export default function BotSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings/discord_invite_link"] });
       queryClient.invalidateQueries({ queryKey: ["/api/settings/welcome_message"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/welcome_channel_id"] });
       queryClient.invalidateQueries({ queryKey: ["/api/settings/command_log_channel"] });
       toast({
         title: "Settings Saved",
@@ -121,6 +137,18 @@ export default function BotSettings() {
               className="discord-input w-full" 
             />
             <p className="text-xs text-gray-500">Logs all slash command usage to this channel.</p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-gray-400 uppercase">Welcome Channel ID</label>
+            <input 
+              type="text" 
+              value={welcomeChannelId}
+              onChange={(e) => setWelcomeChannelId(e.target.value)}
+              placeholder="123456789012345678" 
+              className="discord-input w-full" 
+            />
+            <p className="text-xs text-gray-500">The channel where the image welcome card will be sent.</p>
           </div>
 
           <div className="space-y-2">

@@ -1,6 +1,7 @@
-import { Client, GatewayIntentBits, Events, Partials, Message, PermissionsBitField, SlashCommandBuilder, REST, Routes, ChatInputCommandInteraction, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, InteractionType, PermissionFlagsBits, MessageReaction, User, MessageFlags } from "discord.js";
+import { Client, GatewayIntentBits, Events, Partials, Message, PermissionsBitField, SlashCommandBuilder, REST, Routes, ChatInputCommandInteraction, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, InteractionType, PermissionFlagsBits, MessageReaction, User, MessageFlags, AttachmentBuilder } from "discord.js";
 import { storage } from "./storage";
 import { OpenAI } from "openai";
+import { createCanvas, loadImage } from "canvas";
 
 // Using a global variable for the client to ensure singleton
 let client: Client | null = null;
@@ -76,19 +77,79 @@ export function initializeBot() {
       },
     });
 
-    // Dynamic Welcome Message
+    // Dynamic Image Welcome Card
     try {
-      const welcomeSetting = await storage.getSetting('welcome_message');
-      const welcomeMessage = welcomeSetting?.value || "Welcome to the server, {user}!";
+      const welcomeChannelSetting = await storage.getSetting('welcome_channel_id');
+      const logChannelId = welcomeChannelSetting?.value;
       
-      const channel = member.guild.systemChannel || member.guild.channels.cache.find(ch => ch.isTextBased() && ch.permissionsFor(member.guild.members.me!).has('SendMessages'));
+      const channel = member.guild.channels.cache.get(logChannelId || "") || member.guild.systemChannel;
       
       if (channel && 'send' in channel) {
-        const formattedMessage = welcomeMessage.replace('{user}', `<@${member.id}>`).replace('{server}', member.guild.name);
-        await (channel as any).send(formattedMessage);
+        // Create canvas
+        const canvas = createCanvas(1000, 350);
+        const ctx = canvas.getContext("2d");
+
+        // Background (dark gradient)
+        const gradient = ctx.createLinearGradient(0, 0, 1000, 0);
+        gradient.addColorStop(0, "#0f0f14");
+        gradient.addColorStop(1, "#1f2230");
+
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Title
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 48px sans-serif";
+        ctx.fillText("WELCOME TO", 320, 120);
+
+        ctx.font = "bold 56px sans-serif";
+        ctx.fillStyle = "#ff4da6";
+        ctx.fillText("🔹🔸 Tragic Scene (NLMB) 🔸🔹", 320, 180);
+
+        // Username
+        ctx.font = "bold 44px sans-serif";
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(member.user.username, 320, 250);
+
+        // Avatar circle
+        try {
+          const avatar = await loadImage(
+            member.user.displayAvatarURL({ extension: "png", size: 512 })
+          );
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(150, 175, 110, 0, Math.PI * 2, true);
+          ctx.closePath();
+          ctx.clip();
+          ctx.drawImage(avatar, 40, 65, 220, 220);
+          ctx.restore();
+        } catch (avatarError) {
+          console.error("Failed to load avatar for welcome image:", avatarError);
+        }
+
+        // Create attachment
+        const attachment = new AttachmentBuilder(canvas.toBuffer(), {
+          name: "welcome.png"
+        });
+
+        const welcomeSetting = await storage.getSetting('welcome_message');
+        const customMessage = welcomeSetting?.value || 
+`Welcome {user}!
+Please hit the big ✅ in #rules then head to #subscriptions for roles.
+Ranked players → #claim-your-rank`;
+
+        const formattedMessage = customMessage
+          .replace('{user}', `<@${member.id}>`)
+          .replace('{server}', member.guild.name);
+
+        await (channel as any).send({
+          content: formattedMessage,
+          files: [attachment]
+        });
       }
     } catch (error) {
-      console.error("Error sending welcome message:", error);
+      console.error("Error generating welcome image:", error);
     }
 
     // Auto Role Assignment
