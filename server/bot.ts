@@ -273,6 +273,10 @@ async function registerSlashCommands(clientId: string) {
       .setName('ping')
       .setDescription('Replies with Pong!'),
     new SlashCommandBuilder()
+      .setName('testjoin')
+      .setDescription('Simulate a member joining to test the welcome image')
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder()
       .setName('ars')
       .setDescription('ARS System for incident reports')
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
@@ -477,6 +481,15 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
   if (commandName === 'ping') {
     await interaction.reply('Pong!');
+  }
+
+  if (commandName === 'testjoin') {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: 'Admins only.', flags: [MessageFlags.Ephemeral] });
+    }
+    
+    await interaction.reply({ content: '🔄 Simulating join event...', flags: [MessageFlags.Ephemeral] });
+    client?.emit(Events.GuildMemberAdd, interaction.member as any);
   }
 
   if (commandName === 'ars') {
