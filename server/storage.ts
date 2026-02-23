@@ -135,6 +135,9 @@ export class DatabaseStorage implements IStorage {
 
   async getSetting(key: string): Promise<Setting | undefined> {
     const [s] = await db.select().from(settings).where(eq(settings.key, key));
+    if (!s && key === 'discord_invite_link') {
+      return await this.setSetting({ key: 'discord_invite_link', value: 'https://discord.gg/example' });
+    }
     return s;
   }
 
