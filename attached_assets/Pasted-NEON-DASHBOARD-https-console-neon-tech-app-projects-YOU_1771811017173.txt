@@ -1,0 +1,164 @@
+NEON_DASHBOARD=https://console.neon.tech/app/projects/YOUR_PROJECT_ID
+DATABASE_URL=your_neon_connection_string
+
+const { EmbedBuilder, PermissionFlagsBits } = require("discord.js");
+const { neon } = require("@neondatabase/serverless");
+
+const sql = neon(process.env.DATABASE_URL);
+
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
+  if (message.content !== "!dashboard") return;
+
+  // only mods/admins
+  if (!message.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+    return message.reply("❌ Moderator permission required.");
+  }
+
+  try {
+    const start = Date.now();
+
+    // quick health + stats queries
+    const pingTest = await sql`SELECT NOW()`;
+    const logs = await sql`SELECT COUNT(*) FROM command_logs`;
+    const guilds = await sql`SELECT COUNT(*) FROM guilds`;
+
+    const ping = Date.now() - start;
+
+    const embed = new EmbedBuilder()
+      .setTitle("🛠 Moderator Database Dashboard")
+      .setDescription("Quick access to Neon control panel + live stats")
+      .addFields(
+        { name: "DB Ping", value: `${ping}ms`, inline: true },
+        { name: "Command Logs", value: logs[0].count, inline: true },
+        { name: "Guilds", value: guilds[0].count, inline: true },
+        { name: "Open Neon Console", value: `[Click Here](${process.env.NEON_DASHBOARD})` }
+      )
+      .setFooter({ text: "Moderator only" })
+      .setTimestamp();
+
+    // send privately for safety
+    await message.author.send({ embeds: [embed] });
+
+    message.react("✅");
+
+  } catch (err) {
+    console.error(err);
+    message.reply("❌ Dashboard failed to load.");
+  }
+});
+
+
+!dashboard 
+🛠 Moderator Panel:
+https://your-repl-name.your-user.repl.co/mod
+
+npm i express @neondatabase/serverless
+
+const express = require("express");
+const { neon } = require("@neondatabase/serverless");
+
+const sql = neon(process.env.DATABASE_URL);
+const app = express();
+
+const PORT = 3000;
+
+/* ========= DASHBOARD PAGE ========= */
+app.get("/mod", async (req, res) => {
+  try {
+    const start = Date.now();
+
+    const logs = await sql`SELECT * FROM command_logs ORDER BY time DESC LIMIT 20`;
+    const guilds = await sql`SELECT COUNT(*) FROM guilds`;
+    const pingTest = await sql`SELECT NOW()`;
+
+    const ping = Date.now() - start;
+
+    const rows = logs.map(l => `
+      <tr>
+        <td>${l.username}</td>
+        <td>${l.command}</td>
+        <td>${l.channel_id}</td>
+        <td>${new Date(l.time).toLocaleString()}</td>
+      </tr>
+    `).join("");
+
+    res.send(`
+      <html>
+      <head>
+        <title>Moderator Dashboard</title>
+        <meta http-equiv="refresh" content="10">
+        <style>
+          body {
+            background:#0f1116;
+            color:#fff;
+            font-family:Arial;
+            padding:30px;
+          }
+          table {
+            width:100%;
+            border-collapse:collapse;
+          }
+          td, th {
+            border:1px solid #333;
+            padding:8px;
+          }
+          th {
+            background:#1c1f26;
+          }
+          .card {
+            background:#1c1f26;
+            padding:15px;
+            margin-bottom:20px;
+            border-radius:8px;
+          }
+        </style>
+      </head>
+
+      <body>
+        <h1>🛠 Bot Moderator Panel</h1>
+
+        <div class="card">
+          <b>Database Ping:</b> ${ping}ms<br>
+          <b>Total Guilds:</b> ${guilds[0].count}
+        </div>
+
+        <h2>Recent Commands</h2>
+        <table>
+          <tr>
+            <th>User</th>
+            <th>Command</th>
+            <th>Channel</th>
+            <th>Time</th>
+          </tr>
+          ${rows}
+        </table>
+      </body>
+      </html>
+    `);
+
+  } catch (err) {
+    res.send("Dashboard error");
+  }
+});
+
+app.listen(PORT, () => console.log("Dashboard running"));
+
+require("./dashboardServer");
+
+const { PermissionFlagsBits } = require("discord.js");
+
+client.on("messageCreate", async (message) => {
+  if (message.content === "!dashboard") {
+
+    if (!message.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+      return message.reply("❌ Moderator only");
+    }
+
+    const link = `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co/mod`;
+
+    message.reply(`🛠 Moderator Panel:\n${link}`);
+  }
+});
+
+DATABASE_URL=your_neon_string

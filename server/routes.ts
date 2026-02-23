@@ -169,5 +169,84 @@ export async function registerRoutes(
     res.json(stats);
   });
 
+  // Moderator Panel
+  app.get("/mod", async (req, res) => {
+    try {
+      const start = Date.now();
+      const stats = await storage.getStats();
+      const dbPing = Date.now() - start;
+      const recentLogs = await storage.getLogs(20);
+
+      const rows = recentLogs.map(l => `
+        <tr>
+          <td>${l.username || 'System'}</td>
+          <td>${l.type}</td>
+          <td>${l.content.substring(0, 50)}${l.content.length > 50 ? '...' : ''}</td>
+          <td>${new Date(l.timestamp).toLocaleString()}</td>
+        </tr>
+      `).join("");
+
+      res.send(`
+        <html>
+        <head>
+          <title>Moderator Dashboard</title>
+          <meta http-equiv="refresh" content="10">
+          <style>
+            body {
+              background:#0f1116;
+              color:#fff;
+              font-family: Arial, sans-serif;
+              padding:30px;
+            }
+            table {
+              width:100%;
+              border-collapse:collapse;
+              margin-top: 20px;
+            }
+            td, th {
+              border:1px solid #333;
+              padding:12px;
+              text-align: left;
+            }
+            th {
+              background:#1c1f26;
+              color: #5865F2;
+            }
+            .card {
+              background:#1c1f26;
+              padding:20px;
+              margin-bottom:20px;
+              border-radius:8px;
+              border: 1px solid #333;
+            }
+            h1 { color: #5865F2; }
+          </style>
+        </head>
+        <body>
+          <h1>🛠 Bot Moderator Panel</h1>
+          <div class="card">
+            <b>Database Ping:</b> ${dbPing}ms<br>
+            <b>Total Logs:</b> ${stats.totalLogs}<br>
+            <b>Active Cases:</b> ${stats.totalCases}
+          </div>
+          <h2>Recent Activity</h2>
+          <table>
+            <tr>
+              <th>User</th>
+              <th>Type</th>
+              <th>Content</th>
+              <th>Time</th>
+            </tr>
+            ${rows}
+          </table>
+        </body>
+        </html>
+      `);
+    } catch (err) {
+      console.error(err);
+      res.status(500).send("Dashboard error");
+    }
+  });
+
   return httpServer;
 }

@@ -361,6 +361,10 @@ async function registerSlashCommands(clientId: string) {
         opt.setName('role')
           .setDescription('Role to assign')
           .setRequired(true)),
+    new SlashCommandBuilder()
+      .setName('stats')
+      .setDescription('Show live database and bot stats')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   ].map(command => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
@@ -481,6 +485,36 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
   if (commandName === 'ping') {
     await interaction.reply('Pong!');
+  }
+
+  if (commandName === 'stats') {
+    if (!(member?.permissions as Readonly<PermissionsBitField>).has(PermissionsBitField.Flags.ManageGuild)) {
+      return interaction.reply({ content: '❌ Moderator permission required.', flags: [MessageFlags.Ephemeral] });
+    }
+
+    try {
+      const start = Date.now();
+      const stats = await storage.getStats();
+      const dbPing = Date.now() - start;
+
+      const embed = new EmbedBuilder()
+        .setTitle("🛠 Moderator Database Dashboard")
+        .setDescription("Quick access to live stats and management links")
+        .addFields(
+          { name: "DB Ping", value: `${dbPing}ms`, inline: true },
+          { name: "Total Logs", value: stats.totalLogs.toString(), inline: true },
+          { name: "Total Cases", value: stats.totalCases.toString(), inline: true },
+          { name: "Dashboard", value: `[Click Here](${process.env.REPL_SLUG && process.env.REPL_OWNER ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co/mod` : 'Not Configured'})` }
+        )
+        .setColor(0x5865F2)
+        .setFooter({ text: "Moderator only" })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+    } catch (err) {
+      console.error(err);
+      await interaction.reply({ content: "❌ Stats failed to load.", flags: [MessageFlags.Ephemeral] });
+    }
   }
 
   if (commandName === 'testjoin') {
