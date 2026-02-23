@@ -179,6 +179,19 @@ Ranked players → #claim-your-rank`;
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return;
 
+    // !dashboard command
+    if (message.content === "!dashboard") {
+      if (!message.member?.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        return message.reply("❌ Moderator only");
+      }
+
+      const link = process.env.REPL_SLUG && process.env.REPL_OWNER
+        ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co/mod`
+        : "Dashboard URL not configured.";
+
+      return message.reply(`🛠 Moderator Panel:\n${link}`);
+    }
+
     // 1. Check commands
     if (message.content.startsWith('!')) {
       await handleCommand(message);
