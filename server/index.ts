@@ -2,9 +2,13 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { initializeKeepAlive } from "./keepAlive";
 
 const app = express();
 const httpServer = createServer(app);
+
+// Initialize KeepAlive service
+initializeKeepAlive();
 
 declare module "http" {
   interface IncomingMessage {
