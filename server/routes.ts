@@ -172,6 +172,13 @@ export async function registerRoutes(
   // Moderator Panel
   app.get("/mod", async (req, res) => {
     try {
+      const { pwd } = req.query;
+      const dashboardPassword = process.env.DASHBOARD_PASSWORD;
+
+      if (!dashboardPassword || pwd !== dashboardPassword) {
+        return res.status(403).send("<h1>❌ Access Denied</h1><p>Invalid or missing dashboard password.</p>");
+      }
+
       const start = Date.now();
       const stats = await storage.getStats();
       const dbPing = Date.now() - start;

@@ -185,8 +185,9 @@ Ranked players → #claim-your-rank`;
         return message.reply("❌ Moderator only");
       }
 
+      const password = process.env.DASHBOARD_PASSWORD || "No password set";
       const link = process.env.REPL_SLUG && process.env.REPL_OWNER
-        ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co/mod`
+        ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co/mod?pwd=${password}`
         : "Dashboard URL not configured.";
 
       return message.reply(`🛠 Moderator Panel:\n${link}`);
