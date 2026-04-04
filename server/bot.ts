@@ -397,6 +397,17 @@ async function registerSlashCommands(clientId: string) {
         sub.setName('view')
           .setDescription('View members in a role list')
           .addRoleOption(opt => opt.setName('role').setDescription('The role to view').setRequired(true))),
+    new SlashCommandBuilder()
+      .setName('timeout')
+      .setDescription('Timeout (mute) a member for a set duration')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+      .addUserOption(opt => opt.setName('user').setDescription('The member to timeout').setRequired(true))
+      .addIntegerOption(opt => opt.setName('duration').setDescription('Duration in minutes').setRequired(true).setMinValue(1).setMaxValue(40320))
+      .addStringOption(opt => opt.setName('reason').setDescription('Reason for the timeout').setRequired(false)),
+    new SlashCommandBuilder()
+      .setName('syncroles')
+      .setDescription('Sync all Discord role members into the role list tracking database')
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   ].map(command => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
@@ -1013,6 +1024,130 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
         .setTimestamp();
 
       return interaction.reply({ embeds: [embed] });
+    }
+  }
+
+  // ── /timeout ──────────────────────────────────────────────────────────────
+  if (commandName === 'timeout') {
+    if (!(member?.permissions as Readonly<PermissionsBitField>).has(PermissionsBitField.Flags.ModerateMembers)) {
+      return interaction.reply({ content: '❌ You need the Moderate Members permission.', flags: [MessageFlags.Ephemeral] });
+    }
+
+    const target = options.getMember('user');
+    if (!target || !('timeout' in target)) {
+      return interaction.reply({ content: '❌ User not found in this server.', flags: [MessageFlags.Ephemeral] });
+    }
+
+    const targetUser = options.getUser('user', true);
+    const durationMins = options.getInteger('duration', true);
+    const reason = options.getString('reason') || 'No reason provided';
+    const durationMs = durationMins * 60 * 1000;
+
+    try {
+      await (target as any).timeout(durationMs, reason);
+    } catch {
+      return interaction.reply({ content: '❌ Could not timeout this user (check role hierarchy and bot permissions).', flags: [MessageFlags.Ephemeral] });
+    }
+
+    await storage.createCase({
+      type: 'timeout',
+      targetId: targetUser.id,
+      targetName: targetUser.tag,
+      moderatorId: user.id,
+      moderatorName: user.tag,
+      reason,
+      active: true,
+      metadata: { durationMins, expiresAt: new Date(Date.now() + durationMs).toISOString() },
+    });
+
+    await storage.createLog({
+      type: 'timeout',
+      content: `${user.tag} timed out ${targetUser.tag} for ${durationMins} minute(s): ${reason}`,
+      userId: user.id,
+      username: user.tag,
+      metadata: { targetUserId: targetUser.id, durationMins, reason },
+    });
+
+    const durationLabel = durationMins >= 1440
+      ? `${Math.round(durationMins / 1440)} day(s)`
+      : durationMins >= 60
+      ? `${Math.round(durationMins / 60)} hour(s)`
+      : `${durationMins} minute(s)`;
+
+    const embed = new EmbedBuilder()
+      .setTitle('🔇 Member Timed Out')
+      .setColor(0xFEE75C)
+      .addFields(
+        { name: 'User', value: `<@${targetUser.id}> (${targetUser.tag})`, inline: true },
+        { name: 'Duration', value: durationLabel, inline: true },
+        { name: 'Moderator', value: `<@${user.id}>`, inline: true },
+        { name: 'Reason', value: reason },
+        { name: 'Expires', value: `<t:${Math.floor((Date.now() + durationMs) / 1000)}:F>` },
+      )
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed] });
+  }
+
+  // ── /syncroles ────────────────────────────────────────────────────────────
+  if (commandName === 'syncroles') {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: '❌ Administrator permission required.', flags: [MessageFlags.Ephemeral] });
+    }
+
+    await interaction.deferReply();
+
+    try {
+      // Fetch ALL guild members
+      const allMembers = await guild.members.fetch();
+
+      // Get all non-default roles (exclude @everyone)
+      const guildRoles = guild.roles.cache.filter(r => r.id !== guild.id);
+
+      let added = 0;
+      let skipped = 0;
+
+      for (const [, guildMember] of allMembers) {
+        if (guildMember.user.bot) continue;
+
+        for (const [, memberRole] of guildMember.roles.cache) {
+          if (memberRole.id === guild.id) continue; // skip @everyone
+
+          const alreadyTracked = await storage.isRoleListMember(memberRole.id, guildMember.id);
+          if (alreadyTracked) {
+            skipped++;
+            continue;
+          }
+
+          await storage.addRoleListMember({
+            roleId: memberRole.id,
+            roleName: memberRole.name,
+            userId: guildMember.id,
+            username: guildMember.user.tag,
+            addedById: client!.user!.id,
+            addedByName: client!.user!.tag,
+            action: 'add',
+          });
+          added++;
+        }
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle('✅ Role Sync Complete')
+        .setColor(0x57F287)
+        .addFields(
+          { name: '👥 Members Scanned', value: `${allMembers.size}`, inline: true },
+          { name: '🎭 Roles Found', value: `${guildRoles.size}`, inline: true },
+          { name: '➕ Entries Added', value: `${added}`, inline: true },
+          { name: '⏭️ Already Tracked', value: `${skipped}`, inline: true },
+        )
+        .setFooter({ text: `Synced by ${user.tag}` })
+        .setTimestamp();
+
+      return interaction.editReply({ embeds: [embed] });
+    } catch (err) {
+      console.error('syncroles error:', err);
+      return interaction.editReply({ content: '❌ Role sync failed. Check bot permissions (needs Read Members intent).' });
     }
   }
 }

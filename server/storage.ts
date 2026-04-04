@@ -41,6 +41,7 @@ export interface IStorage {
 
   // Role List Members
   addRoleListMember(m: InsertRoleListMember): Promise<RoleListMember>;
+  isRoleListMember(roleId: string, userId: string): Promise<boolean>;
   removeRoleListMember(roleId: string, userId: string): Promise<void>;
   getRoleListMembers(roleId?: string): Promise<RoleListMember[]>;
   getRoleListHistory(limit?: number): Promise<RoleListMember[]>;
@@ -164,6 +165,12 @@ export class DatabaseStorage implements IStorage {
   async addRoleListMember(m: InsertRoleListMember): Promise<RoleListMember> {
     const [entry] = await db.insert(roleListMembers).values(m).returning();
     return entry;
+  }
+
+  async isRoleListMember(roleId: string, userId: string): Promise<boolean> {
+    const [existing] = await db.select().from(roleListMembers)
+      .where(and(eq(roleListMembers.roleId, roleId), eq(roleListMembers.userId, userId), eq(roleListMembers.action, "add")));
+    return !!existing;
   }
 
   async removeRoleListMember(roleId: string, userId: string): Promise<void> {
