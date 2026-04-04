@@ -14,15 +14,16 @@ export const logs = pgTable("logs", {
 
 export const cases = pgTable("cases", {
   id: serial("id").primaryKey(),
-  type: text("type").notNull(), 
-  reason: text("reason"),
-  moderatorId: text("moderator_id").notNull(),
+  type: text("type").notNull(),
+  moderatorId: text("moderator_id"),
+  command: text("command"),
   moderatorName: text("moderator_name").notNull(),
   targetId: text("target_id").notNull(),
   targetName: text("target_name").notNull(),
   active: boolean("active").default(true),
   metadata: jsonb("metadata"),
   timestamp: timestamp("timestamp").defaultNow().notNull(),
+  reason: text("reason"),
 });
 
 export const rules = pgTable("rules", {
