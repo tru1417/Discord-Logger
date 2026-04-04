@@ -855,102 +855,164 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       const targetUser = options.getUser('user', true);
       const guildMember = options.getMember('user');
 
-      try {
-        if (guildMember && 'roles' in guildMember) {
+      // Always save to the list regardless of Discord role assignment
+      await storage.addRoleListMember({
+        roleId: role.id,
+        roleName: role.name,
+        userId: targetUser.id,
+        username: targetUser.tag,
+        addedById: user.id,
+        addedByName: user.tag,
+        action: 'add',
+      });
+
+      await storage.createLog({
+        type: 'role_list_add',
+        content: `${user.tag} added ${targetUser.tag} to role list: ${role.name}`,
+        userId: user.id,
+        username: user.tag,
+        metadata: { roleId: role.id, roleName: role.name, targetUserId: targetUser.id, targetUsername: targetUser.tag },
+      });
+
+      // Attempt Discord role assignment separately (may fail due to hierarchy)
+      let roleAssigned = false;
+      if (guildMember && 'roles' in guildMember) {
+        try {
           await (guildMember as any).roles.add(role.id);
+          roleAssigned = true;
+        } catch {
+          roleAssigned = false;
         }
-
-        await storage.addRoleListMember({
-          roleId: role.id,
-          roleName: role.name,
-          userId: targetUser.id,
-          username: targetUser.tag,
-          addedById: user.id,
-          addedByName: user.tag,
-          action: 'add',
-        });
-
-        await storage.createLog({
-          type: 'role_list_add',
-          content: `${user.tag} added ${targetUser.tag} to role list: ${role.name}`,
-          userId: user.id,
-          username: user.tag,
-          metadata: { roleId: role.id, roleName: role.name, targetUserId: targetUser.id, targetUsername: targetUser.tag },
-        });
-
-        const embed = new EmbedBuilder()
-          .setTitle('✅ Role List — Member Added')
-          .setColor(0x57F287)
-          .addFields(
-            { name: 'User', value: `<@${targetUser.id}> (${targetUser.tag})`, inline: true },
-            { name: 'Role', value: `<@&${role.id}> (${role.name})`, inline: true },
-            { name: 'Added By', value: `<@${user.id}>`, inline: true },
-          )
-          .setTimestamp();
-
-        return interaction.reply({ embeds: [embed] });
-      } catch (err) {
-        console.error('rolelist add error:', err);
-        return interaction.reply({ content: '❌ Failed to add member to role list.', flags: [MessageFlags.Ephemeral] });
       }
+
+      const embed = new EmbedBuilder()
+        .setTitle('✅ Role List — Member Added')
+        .setColor(0x57F287)
+        .addFields(
+          { name: 'User', value: `<@${targetUser.id}> (${targetUser.tag})`, inline: true },
+          { name: 'Role', value: `<@&${role.id}> (${role.name})`, inline: true },
+          { name: 'Added By', value: `<@${user.id}>`, inline: true },
+          { name: 'Discord Role Assigned', value: roleAssigned ? '✅ Yes' : '⚠️ No (bot lacks hierarchy)', inline: false },
+        )
+        .setTimestamp();
+
+      return interaction.reply({ embeds: [embed] });
     }
 
     if (subcommand === 'remove') {
       const targetUser = options.getUser('user', true);
       const guildMember = options.getMember('user');
 
-      try {
-        if (guildMember && 'roles' in guildMember) {
+      // Always remove from list regardless of Discord role removal
+      await storage.removeRoleListMember(role.id, targetUser.id);
+
+      await storage.createLog({
+        type: 'role_list_remove',
+        content: `${user.tag} removed ${targetUser.tag} from role list: ${role.name}`,
+        userId: user.id,
+        username: user.tag,
+        metadata: { roleId: role.id, roleName: role.name, targetUserId: targetUser.id, targetUsername: targetUser.tag },
+      });
+
+      // Attempt Discord role removal separately
+      let roleRemoved = false;
+      if (guildMember && 'roles' in guildMember) {
+        try {
           await (guildMember as any).roles.remove(role.id);
+          roleRemoved = true;
+        } catch {
+          roleRemoved = false;
         }
-
-        await storage.removeRoleListMember(role.id, targetUser.id);
-
-        await storage.createLog({
-          type: 'role_list_remove',
-          content: `${user.tag} removed ${targetUser.tag} from role list: ${role.name}`,
-          userId: user.id,
-          username: user.tag,
-          metadata: { roleId: role.id, roleName: role.name, targetUserId: targetUser.id, targetUsername: targetUser.tag },
-        });
-
-        const embed = new EmbedBuilder()
-          .setTitle('🗑️ Role List — Member Removed')
-          .setColor(0xED4245)
-          .addFields(
-            { name: 'User', value: `<@${targetUser.id}> (${targetUser.tag})`, inline: true },
-            { name: 'Role', value: `<@&${role.id}> (${role.name})`, inline: true },
-            { name: 'Removed By', value: `<@${user.id}>`, inline: true },
-          )
-          .setTimestamp();
-
-        return interaction.reply({ embeds: [embed] });
-      } catch (err) {
-        console.error('rolelist remove error:', err);
-        return interaction.reply({ content: '❌ Failed to remove member from role list.', flags: [MessageFlags.Ephemeral] });
       }
+
+      const embed = new EmbedBuilder()
+        .setTitle('🗑️ Role List — Member Removed')
+        .setColor(0xED4245)
+        .addFields(
+          { name: 'User', value: `<@${targetUser.id}> (${targetUser.tag})`, inline: true },
+          { name: 'Role', value: `<@&${role.id}> (${role.name})`, inline: true },
+          { name: 'Removed By', value: `<@${user.id}>`, inline: true },
+          { name: 'Discord Role Removed', value: roleRemoved ? '✅ Yes' : '⚠️ No (bot lacks hierarchy)', inline: false },
+        )
+        .setTimestamp();
+
+      return interaction.reply({ embeds: [embed] });
     }
 
     if (subcommand === 'view') {
       const members = await storage.getRoleListMembers(role.id);
 
+      // Pull the live Discord role object for color, position, etc.
+      const liveRole = guild.roles.cache.get(role.id);
+      const roleColor = liveRole?.color || 0x5865F2;
+      const rolePosition = liveRole?.position ?? '—';
+      const roleMentionable = liveRole?.mentionable ? '✅ Yes' : '❌ No';
+      const roleHoisted = liveRole?.hoist ? '✅ Yes' : '❌ No';
+      const liveCount = liveRole?.members.size ?? 0;
+
       if (members.length === 0) {
-        return interaction.reply({
-          content: `📋 No members currently in role list: **${role.name}**`,
-          flags: [MessageFlags.Ephemeral],
-        });
+        const emptyEmbed = new EmbedBuilder()
+          .setTitle(`📋 Role List — ${role.name}`)
+          .setColor(roleColor)
+          .setDescription('> No members have been added to this role list yet.')
+          .addFields(
+            { name: '🎭 Role', value: `<@&${role.id}>`, inline: true },
+            { name: '🔢 Discord Position', value: `#${rolePosition}`, inline: true },
+            { name: '📌 Hoisted', value: roleHoisted, inline: true },
+            { name: '🔔 Mentionable', value: roleMentionable, inline: true },
+            { name: '👥 Live Members', value: `${liveCount}`, inline: true },
+            { name: '📝 List Count', value: '0', inline: true },
+          )
+          .setFooter({ text: `Role ID: ${role.id}` })
+          .setTimestamp();
+
+        return interaction.reply({ embeds: [emptyEmbed] });
       }
 
-      const memberList = members.map((m, i) => `${i + 1}. <@${m.userId}> (${m.username})`).join('\n');
+      // Build numbered member lines — mention + username + added date
+      const memberLines = members.map((m, i) => {
+        const addedDate = new Date(m.timestamp);
+        const dateStr = `<t:${Math.floor(addedDate.getTime() / 1000)}:R>`;
+        return `\`${String(i + 1).padStart(2, '0')}.\` <@${m.userId}> **${m.username}** — added ${dateStr} by **${m.addedByName}**`;
+      });
+
+      // Chunk into pages of 1024 chars max per field
+      const chunks: string[] = [];
+      let current = '';
+      for (const line of memberLines) {
+        if ((current + '\n' + line).length > 1024) {
+          chunks.push(current.trim());
+          current = line;
+        } else {
+          current += (current ? '\n' : '') + line;
+        }
+      }
+      if (current) chunks.push(current.trim());
 
       const embed = new EmbedBuilder()
-        .setTitle(`📋 Role List: ${role.name}`)
-        .setColor(0x5865F2)
-        .setDescription(memberList.substring(0, 4000))
-        .setFooter({ text: `${members.length} member(s)` })
+        .setTitle(`📋 Role List — ${role.name}`)
+        .setColor(roleColor)
+        .addFields(
+          { name: '🎭 Role', value: `<@&${role.id}>`, inline: true },
+          { name: '🔢 Discord Position', value: `#${rolePosition}`, inline: true },
+          { name: '📌 Hoisted', value: roleHoisted, inline: true },
+          { name: '🔔 Mentionable', value: roleMentionable, inline: true },
+          { name: '👥 Live Members', value: `${liveCount}`, inline: true },
+          { name: '📝 List Count', value: `${members.length}`, inline: true },
+        );
+
+      chunks.forEach((chunk, idx) => {
+        embed.addFields({
+          name: idx === 0 ? '👤 Members' : '​', // zero-width space for continuation fields
+          value: chunk,
+        });
+      });
+
+      embed
+        .setFooter({ text: `Role ID: ${role.id} • Last updated` })
         .setTimestamp();
 
-      return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+      return interaction.reply({ embeds: [embed] });
     }
   }
 }
