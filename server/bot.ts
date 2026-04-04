@@ -35,6 +35,10 @@ export function initializeBot() {
 
   client = new Client(clientOptions);
 
+  client.on('error', (err) => {
+    console.error('[Discord] Client error (non-fatal):', err);
+  });
+
   client.on(Events.ClientReady, async (c) => {
     console.log(`Ready! Logged in as ${c.user.tag}`);
     await registerSlashCommands(c.user.id);
@@ -242,9 +246,25 @@ Ranked players → #claim-your-rank`;
         console.error("Error in command logger:", error);
       }
 
-      await handleSlashCommand(interaction);
+      try {
+        await handleSlashCommand(interaction);
+      } catch (err) {
+        console.error('[Discord] Unhandled error in slash command:', err);
+        try {
+          const msg = { content: '❌ An unexpected error occurred.', flags: [MessageFlags.Ephemeral] };
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply(msg);
+          } else {
+            await interaction.reply(msg);
+          }
+        } catch { /* interaction may have expired */ }
+      }
     } else if (interaction.type === InteractionType.ModalSubmit) {
-      await handleModalSubmit(interaction);
+      try {
+        await handleModalSubmit(interaction);
+      } catch (err) {
+        console.error('[Discord] Unhandled error in modal submit:', err);
+      }
     }
   });
 
