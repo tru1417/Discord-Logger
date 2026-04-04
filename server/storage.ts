@@ -1,11 +1,12 @@
 import { db } from "./db";
 import {
-  logs, cases, rules, roleConfigs, settings,
+  logs, cases, rules, roleConfigs, settings, roleListMembers,
   type Log, type InsertLog,
   type Case, type InsertCase,
   type Rule, type InsertRule,
   type RoleConfig, type InsertRoleConfig,
-  type Setting, type InsertSetting
+  type Setting, type InsertSetting,
+  type RoleListMember, type InsertRoleListMember
 } from "@shared/schema";
 import { eq, desc, and } from "drizzle-orm";
 
@@ -37,7 +38,13 @@ export interface IStorage {
   // Settings
   getSetting(key: string): Promise<Setting | undefined>;
   setSetting(s: InsertSetting): Promise<Setting>;
-  
+
+  // Role List Members
+  addRoleListMember(m: InsertRoleListMember): Promise<RoleListMember>;
+  removeRoleListMember(roleId: string, userId: string): Promise<void>;
+  getRoleListMembers(roleId?: string): Promise<RoleListMember[]>;
+  getRoleListHistory(limit?: number): Promise<RoleListMember[]>;
+
   // Stats
   getStats(): Promise<{ totalLogs: number; totalCases: number; recentActivity: Log[] }>;
 }
@@ -152,6 +159,34 @@ export class DatabaseStorage implements IStorage {
     }
     const [newSetting] = await db.insert(settings).values(s).returning();
     return newSetting;
+  }
+
+  async addRoleListMember(m: InsertRoleListMember): Promise<RoleListMember> {
+    const [entry] = await db.insert(roleListMembers).values(m).returning();
+    return entry;
+  }
+
+  async removeRoleListMember(roleId: string, userId: string): Promise<void> {
+    await db.delete(roleListMembers).where(
+      and(eq(roleListMembers.roleId, roleId), eq(roleListMembers.userId, userId), eq(roleListMembers.action, "add"))
+    );
+  }
+
+  async getRoleListMembers(roleId?: string): Promise<RoleListMember[]> {
+    if (roleId) {
+      return await db.select().from(roleListMembers)
+        .where(and(eq(roleListMembers.roleId, roleId), eq(roleListMembers.action, "add")))
+        .orderBy(desc(roleListMembers.timestamp));
+    }
+    return await db.select().from(roleListMembers)
+      .where(eq(roleListMembers.action, "add"))
+      .orderBy(desc(roleListMembers.timestamp));
+  }
+
+  async getRoleListHistory(limit = 50): Promise<RoleListMember[]> {
+    return await db.select().from(roleListMembers)
+      .orderBy(desc(roleListMembers.timestamp))
+      .limit(limit);
   }
 
   async getStats(): Promise<{ totalLogs: number; totalCases: number; recentActivity: Log[] }> {

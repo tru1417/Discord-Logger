@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { insertLogSchema, insertCaseSchema, insertRuleSchema, insertRoleConfigSchema, insertSettingsSchema, logs, cases, rules, roleConfigs, settings } from './schema';
+import { insertLogSchema, insertCaseSchema, insertRuleSchema, insertRoleConfigSchema, insertSettingsSchema, insertRoleListMemberSchema, logs, cases, rules, roleConfigs, settings, roleListMembers } from './schema';
 
 export const errorSchemas = {
   validation: z.object({
@@ -159,6 +159,38 @@ export const api = {
           totalCases: z.number(),
           recentActivity: z.array(z.custom<typeof logs.$inferSelect>()),
         }),
+      },
+    },
+  },
+  roleListMembers: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/role-list-members',
+      responses: {
+        200: z.array(z.custom<typeof roleListMembers.$inferSelect>()),
+      },
+    },
+    history: {
+      method: 'GET' as const,
+      path: '/api/role-list-history',
+      responses: {
+        200: z.array(z.custom<typeof roleListMembers.$inferSelect>()),
+      },
+    },
+    add: {
+      method: 'POST' as const,
+      path: '/api/role-list-members',
+      input: insertRoleListMemberSchema,
+      responses: {
+        201: z.custom<typeof roleListMembers.$inferSelect>(),
+        400: z.object({ message: z.string() }),
+      },
+    },
+    remove: {
+      method: 'DELETE' as const,
+      path: '/api/role-list-members/:roleId/:userId',
+      responses: {
+        204: z.void(),
       },
     },
   },

@@ -379,6 +379,24 @@ async function registerSlashCommands(clientId: string) {
       .setName('stats')
       .setDescription('Show live database and bot stats')
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    new SlashCommandBuilder()
+      .setName('rolelist')
+      .setDescription('Add or remove members from a role list')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+      .addSubcommand(sub =>
+        sub.setName('add')
+          .setDescription('Add a member to a role list')
+          .addRoleOption(opt => opt.setName('role').setDescription('The role to add the member to').setRequired(true))
+          .addUserOption(opt => opt.setName('user').setDescription('The user to add').setRequired(true)))
+      .addSubcommand(sub =>
+        sub.setName('remove')
+          .setDescription('Remove a member from a role list')
+          .addRoleOption(opt => opt.setName('role').setDescription('The role to remove the member from').setRequired(true))
+          .addUserOption(opt => opt.setName('user').setDescription('The user to remove').setRequired(true)))
+      .addSubcommand(sub =>
+        sub.setName('view')
+          .setDescription('View members in a role list')
+          .addRoleOption(opt => opt.setName('role').setDescription('The role to view').setRequired(true))),
   ].map(command => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
@@ -826,6 +844,113 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
         embeds: [embed],
         flags: [MessageFlags.Ephemeral]
       });
+    }
+  }
+
+  if (commandName === 'rolelist') {
+    const subcommand = options.getSubcommand();
+    const role = options.getRole('role', true);
+
+    if (subcommand === 'add') {
+      const targetUser = options.getUser('user', true);
+      const guildMember = options.getMember('user');
+
+      try {
+        if (guildMember && 'roles' in guildMember) {
+          await (guildMember as any).roles.add(role.id);
+        }
+
+        await storage.addRoleListMember({
+          roleId: role.id,
+          roleName: role.name,
+          userId: targetUser.id,
+          username: targetUser.tag,
+          addedById: user.id,
+          addedByName: user.tag,
+          action: 'add',
+        });
+
+        await storage.createLog({
+          type: 'role_list_add',
+          content: `${user.tag} added ${targetUser.tag} to role list: ${role.name}`,
+          userId: user.id,
+          username: user.tag,
+          metadata: { roleId: role.id, roleName: role.name, targetUserId: targetUser.id, targetUsername: targetUser.tag },
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle('✅ Role List — Member Added')
+          .setColor(0x57F287)
+          .addFields(
+            { name: 'User', value: `<@${targetUser.id}> (${targetUser.tag})`, inline: true },
+            { name: 'Role', value: `<@&${role.id}> (${role.name})`, inline: true },
+            { name: 'Added By', value: `<@${user.id}>`, inline: true },
+          )
+          .setTimestamp();
+
+        return interaction.reply({ embeds: [embed] });
+      } catch (err) {
+        console.error('rolelist add error:', err);
+        return interaction.reply({ content: '❌ Failed to add member to role list.', flags: [MessageFlags.Ephemeral] });
+      }
+    }
+
+    if (subcommand === 'remove') {
+      const targetUser = options.getUser('user', true);
+      const guildMember = options.getMember('user');
+
+      try {
+        if (guildMember && 'roles' in guildMember) {
+          await (guildMember as any).roles.remove(role.id);
+        }
+
+        await storage.removeRoleListMember(role.id, targetUser.id);
+
+        await storage.createLog({
+          type: 'role_list_remove',
+          content: `${user.tag} removed ${targetUser.tag} from role list: ${role.name}`,
+          userId: user.id,
+          username: user.tag,
+          metadata: { roleId: role.id, roleName: role.name, targetUserId: targetUser.id, targetUsername: targetUser.tag },
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle('🗑️ Role List — Member Removed')
+          .setColor(0xED4245)
+          .addFields(
+            { name: 'User', value: `<@${targetUser.id}> (${targetUser.tag})`, inline: true },
+            { name: 'Role', value: `<@&${role.id}> (${role.name})`, inline: true },
+            { name: 'Removed By', value: `<@${user.id}>`, inline: true },
+          )
+          .setTimestamp();
+
+        return interaction.reply({ embeds: [embed] });
+      } catch (err) {
+        console.error('rolelist remove error:', err);
+        return interaction.reply({ content: '❌ Failed to remove member from role list.', flags: [MessageFlags.Ephemeral] });
+      }
+    }
+
+    if (subcommand === 'view') {
+      const members = await storage.getRoleListMembers(role.id);
+
+      if (members.length === 0) {
+        return interaction.reply({
+          content: `📋 No members currently in role list: **${role.name}**`,
+          flags: [MessageFlags.Ephemeral],
+        });
+      }
+
+      const memberList = members.map((m, i) => `${i + 1}. <@${m.userId}> (${m.username})`).join('\n');
+
+      const embed = new EmbedBuilder()
+        .setTitle(`📋 Role List: ${role.name}`)
+        .setColor(0x5865F2)
+        .setDescription(memberList.substring(0, 4000))
+        .setFooter({ text: `${members.length} member(s)` })
+        .setTimestamp();
+
+      return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
     }
   }
 }

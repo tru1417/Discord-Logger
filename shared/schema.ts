@@ -45,6 +45,18 @@ export const roleConfigs = pgTable("role_configs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const roleListMembers = pgTable("role_list_members", {
+  id: serial("id").primaryKey(),
+  roleId: text("role_id").notNull(),
+  roleName: text("role_name").notNull(),
+  userId: text("user_id").notNull(),
+  username: text("username").notNull(),
+  addedById: text("added_by_id").notNull(),
+  addedByName: text("added_by_name").notNull(),
+  action: text("action").notNull().default("add"),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+});
+
 export const settings = pgTable("settings", {
   id: serial("id").primaryKey(),
   key: text("key").notNull().unique(),
@@ -57,6 +69,7 @@ export const insertCaseSchema = createInsertSchema(cases).omit({ id: true, times
 export const insertRuleSchema = createInsertSchema(rules).omit({ id: true, createdAt: true });
 export const insertRoleConfigSchema = createInsertSchema(roleConfigs).omit({ id: true, createdAt: true });
 export const insertSettingsSchema = createInsertSchema(settings).omit({ id: true, updatedAt: true });
+export const insertRoleListMemberSchema = createInsertSchema(roleListMembers).omit({ id: true, timestamp: true });
 
 export type Log = typeof logs.$inferSelect;
 export type InsertLog = z.infer<typeof insertLogSchema>;
@@ -72,3 +85,6 @@ export type InsertRoleConfig = z.infer<typeof insertRoleConfigSchema>;
 
 export type Setting = typeof settings.$inferSelect;
 export type InsertSetting = z.infer<typeof insertSettingsSchema>;
+
+export type RoleListMember = typeof roleListMembers.$inferSelect;
+export type InsertRoleListMember = z.infer<typeof insertRoleListMemberSchema>;

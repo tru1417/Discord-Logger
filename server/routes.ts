@@ -163,6 +163,36 @@ export async function registerRoutes(
     }
   });
 
+  // Role List Members
+  app.get(api.roleListMembers.list.path, async (req, res) => {
+    const roleId = req.query.roleId as string | undefined;
+    const members = await storage.getRoleListMembers(roleId);
+    res.json(members);
+  });
+
+  app.get(api.roleListMembers.history.path, async (req, res) => {
+    const history = await storage.getRoleListHistory();
+    res.json(history);
+  });
+
+  app.post(api.roleListMembers.add.path, async (req, res) => {
+    try {
+      const input = api.roleListMembers.add.input.parse(req.body);
+      const member = await storage.addRoleListMember(input);
+      res.status(201).json(member);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      throw err;
+    }
+  });
+
+  app.delete(api.roleListMembers.remove.path, async (req, res) => {
+    await storage.removeRoleListMember(req.params.roleId, req.params.userId);
+    res.status(204).send();
+  });
+
   // Stats
   app.get(api.stats.get.path, async (req, res) => {
     const stats = await storage.getStats();
