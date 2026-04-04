@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events, Partials, Message, PermissionsBitField, SlashCommandBuilder, REST, Routes, ChatInputCommandInteraction, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, InteractionType, PermissionFlagsBits, MessageReaction, User, MessageFlags, AttachmentBuilder } from "discord.js";
+import { Client, GatewayIntentBits, Events, Partials, Message, SlashCommandBuilder, REST, Routes, ChatInputCommandInteraction, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, InteractionType, PermissionFlagsBits, MessageReaction, User, MessageFlags, AttachmentBuilder } from "discord.js";
 import { storage } from "./storage";
 import { OpenAI } from "openai";
 import { createCanvas, loadImage } from "canvas";
@@ -447,8 +447,8 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
   if (!guild) return;
 
   if (commandName === 'warn') {
-    if (!(member?.permissions as Readonly<PermissionsBitField>).has(PermissionsBitField.Flags.KickMembers)) {
-      return interaction.reply({ content: 'You do not have permission to use this command.', flags: [MessageFlags.Ephemeral] });
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.KickMembers)) {
+      return interaction.reply({ content: '❌ You need the Kick Members permission to warn users.', flags: [MessageFlags.Ephemeral] });
     }
     const target = options.getUser('user', true);
     const reason = options.getString('reason') || 'No reason provided';
@@ -467,8 +467,8 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
   }
 
   if (commandName === 'kick') {
-    if (!(member?.permissions as Readonly<PermissionsBitField>).has(PermissionsBitField.Flags.KickMembers)) {
-      return interaction.reply({ content: 'You do not have permission to use this command.', flags: [MessageFlags.Ephemeral] });
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.KickMembers)) {
+      return interaction.reply({ content: '❌ You need the Kick Members permission.', flags: [MessageFlags.Ephemeral] });
     }
     const target = options.getMember('user');
     if (!target || !('kick' in target)) return interaction.reply('User not found in this server.');
@@ -491,8 +491,8 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
   }
 
   if (commandName === 'ban') {
-    if (!(member?.permissions as Readonly<PermissionsBitField>).has(PermissionsBitField.Flags.BanMembers)) {
-      return interaction.reply({ content: 'You do not have permission to use this command.', flags: [MessageFlags.Ephemeral] });
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.BanMembers)) {
+      return interaction.reply({ content: '❌ You need the Ban Members permission.', flags: [MessageFlags.Ephemeral] });
     }
     const target = options.getMember('user');
     if (!target || !('ban' in target)) return interaction.reply('User not found in this server.');
@@ -551,8 +551,8 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
   }
 
   if (commandName === 'stats') {
-    if (!(member?.permissions as Readonly<PermissionsBitField>).has(PermissionsBitField.Flags.ManageGuild)) {
-      return interaction.reply({ content: '❌ Moderator permission required.', flags: [MessageFlags.Ephemeral] });
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      return interaction.reply({ content: '❌ You need the Manage Server permission.', flags: [MessageFlags.Ephemeral] });
     }
 
     try {
@@ -1049,7 +1049,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
   // ── /timeout ──────────────────────────────────────────────────────────────
   if (commandName === 'timeout') {
-    if (!(member?.permissions as Readonly<PermissionsBitField>).has(PermissionsBitField.Flags.ModerateMembers)) {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ModerateMembers)) {
       return interaction.reply({ content: '❌ You need the Moderate Members permission.', flags: [MessageFlags.Ephemeral] });
     }
 
