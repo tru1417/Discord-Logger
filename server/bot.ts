@@ -39,6 +39,22 @@ export function initializeBot() {
     console.error('[Discord] Client error (non-fatal):', err);
   });
 
+  client.on(Events.ShardDisconnect, (event, shardId) => {
+    console.warn(`[Discord] Shard ${shardId} disconnected (code ${event.code}). Discord.js will auto-reconnect.`);
+  });
+
+  client.on(Events.ShardReconnecting, (shardId) => {
+    console.log(`[Discord] Shard ${shardId} reconnecting…`);
+  });
+
+  client.on(Events.ShardResume, (shardId, replayedEvents) => {
+    console.log(`[Discord] Shard ${shardId} resumed (${replayedEvents} events replayed).`);
+  });
+
+  client.on(Events.ShardError, (err, shardId) => {
+    console.error(`[Discord] Shard ${shardId} error (non-fatal):`, err.message);
+  });
+
   client.on(Events.ClientReady, async (c) => {
     console.log(`Ready! Logged in as ${c.user.tag}`);
     const guild = c.guilds.cache.first();
