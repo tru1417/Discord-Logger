@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, jsonb, boolean, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, jsonb, boolean, integer, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -65,12 +65,48 @@ export const settings = pgTable("settings", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// ── DayZ Faction System ────────────────────────────────────────────────────
+export const factions = pgTable("factions", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  tag: text("tag").notNull(),
+  leaderId: text("leader_id").notNull(),
+  leaderName: text("leader_name").notNull(),
+  description: text("description").default("No description set.").notNull(),
+  color: text("color").default("#5865F2").notNull(),
+  hq: text("hq").default("Unknown").notNull(),
+  kills: integer("kills").default(0).notNull(),
+  status: text("status").default("active").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const factionMembers = pgTable("faction_members", {
+  id: serial("id").primaryKey(),
+  factionId: integer("faction_id").notNull(),
+  userId: text("user_id").notNull(),
+  username: text("username").notNull(),
+  rank: text("rank").default("member").notNull(), // leader | officer | member
+  joinedAt: timestamp("joined_at").defaultNow().notNull(),
+});
+
+// ── DayZ Server Tracking ───────────────────────────────────────────────────
+export const dayzServers = pgTable("dayz_servers", {
+  id: serial("id").primaryKey(),
+  label: text("label").notNull(),
+  battlemetricsId: text("battlemetrics_id").notNull(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertLogSchema = createInsertSchema(logs).omit({ id: true, timestamp: true });
 export const insertCaseSchema = createInsertSchema(cases).omit({ id: true, timestamp: true });
 export const insertRuleSchema = createInsertSchema(rules).omit({ id: true, createdAt: true });
 export const insertRoleConfigSchema = createInsertSchema(roleConfigs).omit({ id: true, createdAt: true });
 export const insertSettingsSchema = createInsertSchema(settings).omit({ id: true, updatedAt: true });
 export const insertRoleListMemberSchema = createInsertSchema(roleListMembers).omit({ id: true, timestamp: true });
+export const insertFactionSchema = createInsertSchema(factions).omit({ id: true, createdAt: true });
+export const insertFactionMemberSchema = createInsertSchema(factionMembers).omit({ id: true, joinedAt: true });
+export const insertDayzServerSchema = createInsertSchema(dayzServers).omit({ id: true, createdAt: true });
 
 export type Log = typeof logs.$inferSelect;
 export type InsertLog = z.infer<typeof insertLogSchema>;
@@ -89,3 +125,12 @@ export type InsertSetting = z.infer<typeof insertSettingsSchema>;
 
 export type RoleListMember = typeof roleListMembers.$inferSelect;
 export type InsertRoleListMember = z.infer<typeof insertRoleListMemberSchema>;
+
+export type Faction = typeof factions.$inferSelect;
+export type InsertFaction = z.infer<typeof insertFactionSchema>;
+
+export type FactionMember = typeof factionMembers.$inferSelect;
+export type InsertFactionMember = z.infer<typeof insertFactionMemberSchema>;
+
+export type DayzServer = typeof dayzServers.$inferSelect;
+export type InsertDayzServer = z.infer<typeof insertDayzServerSchema>;
