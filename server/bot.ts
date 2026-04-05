@@ -41,7 +41,12 @@ export function initializeBot() {
 
   client.on(Events.ClientReady, async (c) => {
     console.log(`Ready! Logged in as ${c.user.tag}`);
-    await registerSlashCommands(c.user.id);
+    const guild = c.guilds.cache.first();
+    if (guild) {
+      await registerSlashCommands(c.user.id, guild.id);
+    } else {
+      console.warn('[Bot] No guilds found — slash commands not registered.');
+    }
   });
 
   // Log Message Deletions
@@ -281,7 +286,7 @@ Ranked players → #claim-your-rank`;
   return client;
 }
 
-async function registerSlashCommands(clientId: string) {
+async function registerSlashCommands(clientId: string, guildId: string) {
   const commands = [
     new SlashCommandBuilder()
       .setName('warn')
@@ -435,11 +440,14 @@ async function registerSlashCommands(clientId: string) {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
 
   try {
-    console.log('Started refreshing application (/) commands.');
-    await rest.put(Routes.applicationCommands(clientId), { body: commands });
-    console.log('Successfully reloaded application (/) commands.');
+    console.log('Registering slash commands for guild...');
+    // Clear any stale global commands so they don't appear alongside guild commands
+    await rest.put(Routes.applicationCommands(clientId), { body: [] });
+    // Register all commands directly to the guild — takes effect immediately
+    await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
+    console.log(`Successfully registered ${commands.length} guild commands.`);
   } catch (error) {
-    console.error(error);
+    console.error('[Bot] Failed to register slash commands:', error);
   }
 }
 
