@@ -1,5 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
-import { import { initializeDatabase } from "./db";
+import { initializeDatabase } from "./db";
 
 (async () => {
   await initializeDatabase();
