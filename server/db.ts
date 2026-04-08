@@ -1,27 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "@shared/schema";
-
-const { Pool } = pg;
-
-if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
-  );
-}
-
-export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
-  }
-});
-
-export const db = drizzle(pool, { schema });
-export default pool;
-import { drizzle } from "drizzle-orm/node-postgres";
-import pg from "pg";
-import * as schema from "@shared/schema";
 import { sql } from "drizzle-orm";
 
 const { Pool } = pg;
@@ -41,10 +20,8 @@ export const pool = new Pool({
 
 export const db = drizzle(pool, { schema });
 
-// Create tables on startup
-async function initializeDatabase() {
+export async function initializeDatabase() {
   try {
-    // Create all tables from schema
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS role_list_members (
         id SERIAL PRIMARY KEY,
@@ -71,7 +48,5 @@ async function initializeDatabase() {
     console.error("Failed to initialize database:", error);
   }
 }
-
-await initializeDatabase();
 
 export default pool;
