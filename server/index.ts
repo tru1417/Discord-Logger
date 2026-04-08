@@ -1,14 +1,9 @@
 import express, { type Request, Response, NextFunction } from "express";
-import { initializeDatabase } from "./db";
-
-(async () => {
-  await initializeDatabase();
-  await registerRoutes(httpServer, app);
-  // ... rest
-})();registerRoutes } from "./routes";
+import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { initializeKeepAlive } from "./keepAlive";
+import { initializeDatabase } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
@@ -78,6 +73,7 @@ process.on('uncaughtException', (err) => {
 });
 
 (async () => {
+  await initializeDatabase();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
