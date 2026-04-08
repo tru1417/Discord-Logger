@@ -1,5 +1,11 @@
 import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes } from "./routes";
+import { import { initializeDatabase } from "./db";
+
+(async () => {
+  await initializeDatabase();
+  await registerRoutes(httpServer, app);
+  // ... rest
+})();registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { initializeKeepAlive } from "./keepAlive";
