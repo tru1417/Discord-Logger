@@ -100,3 +100,5 @@ export async function initializeDatabase() {
     console.error("Failed to initialize database:", error);
   }
 }
+export default pool;
+export { db, pool };
