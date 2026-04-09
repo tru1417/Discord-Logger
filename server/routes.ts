@@ -12,7 +12,7 @@ export async function registerRoutes(
   
   // Initialize Discord Bot
   try {
-    initializeBot();
+await initializeBot();
   } catch (err) {
     console.error("Failed to initialize Discord bot:", err);
   }
