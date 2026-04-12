@@ -1,25 +1,3 @@
-import { drizzle } from "drizzle-orm/node-postgres";
-import pg from "pg";
-import * as schema from "@shared/schema";
-import { sql } from "drizzle-orm";
-
-const { Pool } = pg;
-
-if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
-  );
-}
-
-export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
-  }
-});
-
-export const db = drizzle(pool, { schema });
-
 export async function initializeDatabase() {
   try {
     await db.execute(sql`
@@ -86,6 +64,19 @@ export async function initializeDatabase() {
         updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS dayz_servers (
+        id SERIAL PRIMARY KEY,
+        label TEXT NOT NULL,
+        battlemetrics_id TEXT NOT NULL,
+        player_count INTEGER DEFAULT 0,
+        max_players INTEGER DEFAULT 60,
+        map TEXT NOT NULL,
+        wipe_date TIMESTAMP,
+        active BOOLEAN DEFAULT true NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS factions (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
@@ -96,8 +87,13 @@ export async function initializeDatabase() {
         color TEXT DEFAULT '#5865F2' NOT NULL,
         hq TEXT DEFAULT 'Unknown' NOT NULL,
         kills INTEGER DEFAULT 0 NOT NULL,
+        treasury DECIMAL(10, 2) DEFAULT 0.00,
+        territory TEXT DEFAULT 'None',
+        allies TEXT[] DEFAULT ARRAY[]::TEXT[],
+        enemies TEXT[] DEFAULT ARRAY[]::TEXT[],
         status TEXT DEFAULT 'active' NOT NULL,
-        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS faction_members (
@@ -105,16 +101,63 @@ export async function initializeDatabase() {
         faction_id INTEGER NOT NULL,
         user_id TEXT NOT NULL,
         username TEXT NOT NULL,
+        kills INTEGER DEFAULT 0,
+        deaths INTEGER DEFAULT 0,
+        playtime_hours DECIMAL(10, 2) DEFAULT 0.00,
         rank TEXT DEFAULT 'member' NOT NULL,
-        joined_at TIMESTAMP DEFAULT NOW() NOT NULL
+        role_permissions JSONB DEFAULT '{}',
+        joined_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
 
-      CREATE TABLE IF NOT EXISTS dayz_servers (
+      CREATE TABLE IF NOT EXISTS player_stats (
         id SERIAL PRIMARY KEY,
-        label TEXT NOT NULL,
-        battlemetrics_id TEXT NOT NULL,
-        active BOOLEAN DEFAULT true NOT NULL,
-        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+        user_id TEXT NOT NULL,
+        username TEXT NOT NULL,
+        server_id INTEGER NOT NULL,
+        kills INTEGER DEFAULT 0,
+        deaths INTEGER DEFAULT 0,
+        playtime_hours DECIMAL(10, 2) DEFAULT 0.00,
+        last_seen TIMESTAMP DEFAULT NOW(),
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS kills_log (
+        id SERIAL PRIMARY KEY,
+        server_id INTEGER NOT NULL,
+        killer_id TEXT NOT NULL,
+        killer_name TEXT NOT NULL,
+        victim_id TEXT NOT NULL,
+        victim_name TEXT NOT NULL,
+        weapon TEXT,
+        distance DECIMAL(10, 2),
+        location TEXT,
+        timestamp TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS server_events (
+        id SERIAL PRIMARY KEY,
+        server_id INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        description TEXT NOT NULL,
+        player_id TEXT,
+        player_name TEXT,
+        metadata JSONB,
+        timestamp TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS leaderboards (
+        id SERIAL PRIMARY KEY,
+        server_id INTEGER NOT NULL,
+        user_id TEXT NOT NULL,
+        username TEXT NOT NULL,
+        rank INTEGER,
+        kills INTEGER DEFAULT 0,
+        deaths INTEGER DEFAULT 0,
+        kd_ratio DECIMAL(10, 2) DEFAULT 0.00,
+        playtime_hours DECIMAL(10, 2) DEFAULT 0.00,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
     `);
     console.log("Database tables initialized");
@@ -122,5 +165,3 @@ export async function initializeDatabase() {
     console.error("Failed to initialize database:", error);
   }
 }
-
-export default pool;
