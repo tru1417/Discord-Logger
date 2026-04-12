@@ -189,3 +189,15 @@ export async function initializeDatabase() {
 }
 
 export default pool;
+        kd_ratio DECIMAL(10, 2) DEFAULT 0.00,
+        playtime_hours DECIMAL(10, 2) DEFAULT 0.00,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+    `);
+    console.log("Database tables initialized");
+  } catch (error) {
+    console.error("Failed to initialize database:", error);
+  }
+}
+
+export default pool;
