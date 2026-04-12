@@ -22,7 +22,9 @@ export const db = drizzle(pool, { schema });
 
 export async function initializeDatabase() {
   try {
-    await db.execute(sql`
+    const client = await pool.connect();
+    
+    await client.query(`
       CREATE TABLE IF NOT EXISTS logs (
         id SERIAL PRIMARY KEY,
         type TEXT NOT NULL,
@@ -182,18 +184,8 @@ export async function initializeDatabase() {
         updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
     `);
-    console.log("Database tables initialized");
-  } catch (error) {
-    console.error("Failed to initialize database:", error);
-  }
-}
-
-export default pool;
-        kd_ratio DECIMAL(10, 2) DEFAULT 0.00,
-        playtime_hours DECIMAL(10, 2) DEFAULT 0.00,
-        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
-      );
-    `);
+    
+    client.release();
     console.log("Database tables initialized");
   } catch (error) {
     console.error("Failed to initialize database:", error);
