@@ -475,3 +475,64 @@ async function registerSlashCommands(clientId: string, guildId: string) {
     console.error("AutoMod Error:", error);
   }
 }
+new SlashCommandBuilder()
+  .setName('faction')
+  .setDescription('DayZ faction management')
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+  .addSubcommand(sub =>
+    sub.setName('create')
+      .setDescription('Create a new faction')
+      .addStringOption(opt => opt.setName('name').setDescription('Faction name').setRequired(true))
+      .addStringOption(opt => opt.setName('tag').setDescription('Faction tag (3-5 chars)').setRequired(true)))
+  .addSubcommand(sub =>
+    sub.setName('info')
+      .setDescription('View faction information')
+      .addStringOption(opt => opt.setName('faction').setDescription('Faction name').setRequired(true)))
+  .addSubcommand(sub =>
+    sub.setName('members')
+      .setDescription('List faction members')
+      .addStringOption(opt => opt.setName('faction').setDescription('Faction name').setRequired(true)))
+  .addSubcommand(sub =>
+    sub.setName('invite')
+      .setDescription('Invite player to faction')
+      .addStringOption(opt => opt.setName('faction').setDescription('Faction name').setRequired(true))
+      .addStringOption(opt => opt.setName('player').setDescription('Player name').setRequired(true)))
+  .addSubcommand(sub =>
+    sub.setName('kick')
+      .setDescription('Remove member from faction')
+      .addStringOption(opt => opt.setName('faction').setDescription('Faction name').setRequired(true))
+      .addStringOption(opt => opt.setName('player').setDescription('Player name').setRequired(true)))
+  .addSubcommand(sub =>
+    sub.setName('promote')
+      .setDescription('Promote faction member')
+      .addStringOption(opt => opt.setName('faction').setDescription('Faction name').setRequired(true))
+      .addStringOption(opt => opt.setName('player').setDescription('Player name').setRequired(true))
+      .addStringOption(opt => opt.setName('rank').setDescription('New rank').setRequired(true)
+        .addChoices(
+          { name: 'Member', value: 'member' },
+          { name: 'Officer', value: 'officer' },
+          { name: 'Leader', value: 'leader' }
+        )))
+  .addSubcommand(sub =>
+    sub.setName('stats')
+      .setDescription('View faction statistics')
+      .addStringOption(opt => opt.setName('faction').setDescription('Faction name').setRequired(true)))
+  .addSubcommand(sub =>
+    sub.setName('leaderboard')
+      .setDescription('View top factions by kills')),
+new SlashCommandBuilder()
+  .setName('killfeed')
+  .setDescription('DayZ killfeed management')
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+  .addSubcommand(sub =>
+    sub.setName('setup')
+      .setDescription('Set killfeed channel')
+      .addChannelOption(opt => opt.setName('channel').setDescription('Channel for kills').setRequired(true)))
+  .addSubcommand(sub =>
+    sub.setName('post')
+      .setDescription('Manually post a kill')
+      .addStringOption(opt => opt.setName('killer').setDescription('Killer name').setRequired(true))
+      .addStringOption(opt => opt.setName('victim').setDescription('Victim name').setRequired(true))
+      .addStringOption(opt => opt.setName('weapon').setDescription('Weapon used').setRequired(false))
+      .addNumberOption(opt => opt.setName('distance').setDescription('Distance in meters').setRequired(false))
+      .addStringOption(opt => opt.setName('location').setDescription('Location').setRequired(false))),
