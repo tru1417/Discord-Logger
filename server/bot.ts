@@ -290,7 +290,138 @@ Ranked players → #claim-your-rank`;
       }
     }
   });
+if (commandName === 'faction') {
+  const subcommand = options.getSubcommand();
+  
+  if (subcommand === 'create') {
+    const name = options.getString('name', true);
+    const tag = options.getString('tag', true);
+    
+    if (tag.length < 3 || tag.length > 5) {
+      return interaction.reply('❌ Tag must be 3-5 characters.');
+    }
+    
+    const faction = await dayz.createFaction(name, tag, user.id, user.tag);
+    if (!faction) {
+      return interaction.reply('❌ Failed to create faction.');
+    }
+    
+    await interaction.reply(`✅ Faction **${name}** [${tag}] created! You are the leader.`);
+  }
+  
+  if (subcommand === 'info') {
+    const factionName = options.getString('faction', true);
+    const faction = await storage.getFactionByName(factionName);
+    
+    if (!faction) {
+      return interaction.reply('❌ Faction not found.');
+    }
+    
+    const embed = new EmbedBuilder()
+      .setColor(faction.color as any)
+      .setTitle(`${faction.name} [${faction.tag}]`)
+      .addFields(
+        { name: 'Leader', value: faction.leader_name, inline: true },
+        { name: 'Status', value: faction.status, inline: true },
+        { name: 'Kills', value: faction.kills.toString(), inline: true },
+        { name: 'Treasury', value: `$${faction.treasury}`, inline: true },
+        { name: 'Territory', value: faction.territory, inline: true },
+        { name: 'HQ', value: faction.hq, inline: true },
+        { name: 'Description', value: faction.description }
+      );
+    
+    await interaction.reply({ embeds: [embed] });
+  }
+  
+  if (subcommand === 'members') {
+    const factionName = options.getString('faction', true);
+    const faction = await storage.getFactionByName(factionName);
+    
+    if (!faction) {
+      return interaction.reply('❌ Faction not found.');
+    }
+    
+    const members = await storage.getFactionMembers(faction.id);
+    if (members.length === 0) {
+      return interaction.reply('❌ No members in this faction.');
+    }
+    
+    const memberList = members
+      .map(m => `**${m.username}** - ${m.rank} (${m.kills} kills, ${m.deaths} deaths)`)
+      .join('\n');
+    
+    const embed = new EmbedBuilder()
+      .setColor(faction.color as any)
+      .setTitle(`${faction.name} Members (${members.length})`)
+      .setDescription(memberList);
+    
+    await interaction.reply({ embeds: [embed] });
+  }
+  
+  if (subcommand === 'leaderboard') {
+    const factions = await dayz.getFactionLeaderboard(10);
+    
+    if (factions.length === 0) {
+      return interaction.reply('❌ No factions found.');
+    }
+    
+    const leaderboard = factions
+      .map((f, i) => `**${i + 1}.** ${f.name} [${f.tag}] - ${f.kills} kills`)
+      .join('\n');
+    
+    const embed = new EmbedBuilder()
+      .setColor(0xffd700)
+      .setTitle('🏆 Faction Leaderboard')
+      .setDescription(leaderboard);
+    
+    await interaction.reply({ embeds: [embed] });
+  }
+}
 
+if (commandName === 'killfeed') {
+  const subcommand = options.getSubcommand();
+  
+  if (subcommand === 'setup') {
+    const channel = options.getChannel('channel', true);
+    await storage.setSetting('killfeed_channel', channel.id);
+    await interaction.reply(`✅ Killfeed channel set to ${channel}`);
+  }
+  
+  if (subcommand === 'post') {
+    const killer = options.getString('killer', true);
+    const victim = options.getString('victim', true);
+    const weapon = options.getString('weapon');
+    const distance = options.getNumber('distance');
+    const location = options.getString('location');
+    
+    const killfeedChannelId = await storage.getSetting('killfeed_channel');
+    if (!killfeedChannelId?.value) {
+      return interaction.reply('❌ Killfeed channel not configured.');
+    }
+    
+    const channel = guild.channels.cache.get(killfeedChannelId.value);
+    if (!channel || !('send' in channel)) {
+      return interaction.reply('❌ Killfeed channel not found.');
+    }
+    
+    const success = await dayz.postKillToFeed(channel as any, {
+      killerId: 'manual',
+      killerName: killer,
+      victimId: 'manual',
+      victimName: victim,
+      weapon,
+      distance: distance || undefined,
+      location,
+      serverId: 1,
+    });
+    
+    if (success) {
+      await interaction.reply('✅ Kill posted to killfeed.');
+    } else {
+      await interaction.reply('❌ Failed to post kill.');
+    }
+  }
+}
   // Handle Reactions
   client.on(Events.MessageReactionAdd, handleReactionAdd);
   client.on(Events.MessageReactionRemove, handleReactionRemove);
