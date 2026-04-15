@@ -210,3 +210,128 @@ export class DatabaseStorage implements IStorage {
 }
 
 export const storage = new DatabaseStorage();
+// Add these to your storage object/class
+
+async recordKill(kill: {
+  killerId: string;
+  killerName: string;
+  victimId: string;
+  victimName: string;
+  weapon?: string;
+  distance?: number;
+  location?: string;
+  serverId: number;
+}) {
+  return await db.insert(schema.kills_log).values({
+    server_id: kill.serverId,
+    killer_id: kill.killerId,
+    killer_name: kill.killerName,
+    victim_id: kill.victimId,
+    victim_name: kill.victimName,
+    weapon: kill.weapon,
+    distance: kill.distance,
+    location: kill.location,
+    timestamp: new Date(),
+  });
+}
+
+async createFaction(data: any) {
+  const result = await db.insert(schema.factions).values(data).returning();
+  return result[0];
+}
+
+async getFaction(factionId: number) {
+  return await db.query.factions.findFirst({
+    where: (factions, { eq }) => eq(factions.id, factionId),
+  });
+}
+
+async getFactionByName(name: string) {
+  return await db.query.factions.findFirst({
+    where: (factions, { eq }) => eq(factions.name, name),
+  });
+}
+
+async getFactionByMember(userId: string) {
+  const member = await db.query.faction_members.findFirst({
+    where: (members, { eq }) => eq(members.user_id, userId),
+  });
+  if (!member) return null;
+  return await this.getFaction(member.faction_id);
+}
+
+async addFactionMember(factionId: number, userId: string, username: string, rank: string = "member") {
+  return await db.insert(schema.faction_members).values({
+    faction_id: factionId,
+    user_id: userId,
+    username,
+    rank,
+    kills: 0,
+    deaths: 0,
+    playtime_hours: 0,
+    role_permissions: {},
+  }).returning();
+}
+
+async removeFactionMember(factionId: number, userId: string) {
+  return await db.delete(schema.faction_members)
+    .where(
+      and(
+        eq(schema.faction_members.faction_id, factionId),
+        eq(schema.faction_members.user_id, userId)
+      )
+    );
+}
+
+async getFactionMembers(factionId: number) {
+  return await db.query.faction_members.findMany({
+    where: (members, { eq }) => eq(members.faction_id, factionId),
+  });
+}
+
+async updateFactionMemberRank(factionId: number, userId: string, newRank: string) {
+  return await db.update(schema.faction_members)
+    .set({ rank: newRank })
+    .where(
+      and(
+        eq(schema.faction_members.faction_id, factionId),
+        eq(schema.faction_members.user_id, userId)
+      )
+    );
+}
+
+async updateFactionStats(factionId: number, updates: any) {
+  return await db.update(schema.factions)
+    .set(updates)
+    .where(eq(schema.factions.id, factionId));
+}
+
+async getTopFactions(limit: number = 10) {
+  return await db.query.factions.findMany({
+    orderBy: (factions, { desc }) => [desc(factions.kills)],
+    limit,
+  });
+}
+
+async getPlayerStats(userId: string, serverId: number) {
+  return await db.query.player_stats.findFirst({
+    where: (stats, { and, eq }) =>
+      and(
+        eq(stats.user_id, userId),
+        eq(stats.server_id, serverId)
+      ),
+  });
+}
+
+async updatePlayerStats(userId: string, updates: any) {
+  return await db.update(schema.player_stats)
+    .set(updates)
+    .where(eq(schema.player_stats.user_id, userId));
+}
+
+async getRecentKills(limit: number = 10) {
+  return await db.query.kills_log.findMany({
+    orderBy: (kills, { desc }) => [desc(kills.timestamp)],
+    limit,
+  });
+}
