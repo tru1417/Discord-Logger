@@ -288,7 +288,194 @@ Ranked players → #claim-your-rank`;
       } catch (err) {
         console.error('[Discord] Unhandled error in modal submit:', err);
       }
+     if (commandName === 'faction') {
+    const subcommand = options.getSubcommand();
+    
+    if (subcommand === 'create') {
+      const name = options.getString('name', true);
+      const tag = options.getString('tag', true);
+      
+      if (tag.length < 3 || tag.length > 5) {
+        return interaction.reply('❌ Tag must be 3-5 characters.');
+      }
+      
+      const faction = await storage.createFaction({
+        name,
+        tag,
+        leader_id: user.id,
+        leader_name: user.tag,
+        description: 'No description set.',
+        color: '#5865F2',
+        hq: 'Unknown',
+        kills: 0,
+        treasury: 0,
+        territory: 'None',
+        allies: [],
+        enemies: [],
+        status: 'active',
+      });
+
+      if (!faction) {
+        return interaction.reply('❌ Failed to create faction.');
+      }
+
+      await storage.addFactionMember(faction.id, user.id, user.tag, 'leader');
+      await interaction.reply(`✅ Faction **${name}** [${tag}] created! You are the leader.`);
     }
+    
+    if (subcommand === 'info') {
+      const factionName = options.getString('faction', true);
+      const faction = await storage.getFactionByName(factionName);
+      
+      if (!faction) {
+        return interaction.reply('❌ Faction not found.');
+      }
+      
+      const embed = new EmbedBuilder()
+        .setColor(faction.color as any)
+        .setTitle(`${faction.name} [${faction.tag}]`)
+        .addFields(
+          { name: 'Leader', value: faction.leader_name, inline: true },
+          { name: 'Status', value: faction.status, inline: true },
+          { name: 'Kills', value: faction.kills.toString(), inline: true },
+          { name: 'Treasury', value: `$${faction.treasury}`, inline: true },
+          { name: 'Territory', value: faction.territory, inline: true },
+          { name: 'HQ', value: faction.hq, inline: true },
+          { name: 'Description', value: faction.description }
+        );
+      
+      await interaction.reply({ embeds: [embed] });
+    }
+    
+    if (subcommand === 'members') {
+      const factionName = options.getString('faction', true);
+      const faction = await storage.getFactionByName(factionName);
+      
+      if (!faction) {
+        return interaction.reply('❌ Faction not found.');
+      }
+      
+      const members = await storage.getFactionMembers(faction.id);
+      if (members.length === 0) {
+        return interaction.reply('❌ No members in this faction.');
+      }
+      
+      const memberList = members
+        .map(m => `**${m.username}** - ${m.rank} (${m.kills} kills, ${m.deaths} deaths)`)
+        .join('\n');
+      
+      const embed = new EmbedBuilder()
+        .setColor(faction.color as any)
+        .setTitle(`${faction.name} Members (${members.length})`)
+        .setDescription(memberList);
+      
+      await interaction.reply({ embeds: [embed] });
+    }
+    
+    if (subcommand === 'leaderboard') {
+      const factions = await storage.getTopFactions(10);
+      
+      if (factions.length === 0) {
+        return interaction.reply('❌ No factions found.');
+      }
+      
+      const leaderboard = factions
+        .map((f, i) => `**${i + 1}.** ${f.name} [${f.tag}] - ${f.kills} kills`)
+        .join('\n');
+      
+      const embed = new EmbedBuilder()
+        .setColor(0xffd700)
+        .setTitle('🏆 Faction Leaderboard')
+        .setDescription(leaderboard);
+      
+      await interaction.reply({ embeds: [embed] });
+    }
+  }
+
+  if (commandName === 'killfeed') {
+    const subcommand = options.getSubcommand();
+    
+    if (subcommand === 'setup') {
+      const channel = options.getChannel('channel', true);
+      await storage.setSetting({ key: 'killfeed_channel', value: channel.id });
+      await interaction.reply(`✅ Killfeed channel set to ${channel}`);
+    }
+    
+    if (subcommand === 'post') {
+      const killer = options.getString('killer', true);
+      const victim = options.getString('victim', true);
+      const weapon = options.getString('weapon');
+      const distance = options.getNumber('distance');
+      const location = options.getString('location');
+      
+      const killfeedChannelId = await storage.getSetting('killfeed_channel');
+      if (!killfeedChannelId?.value) {
+        return interaction.reply('❌ Killfeed channel not configured.');
+      }
+      
+      const channel = guild.channels.cache.get(killfeedChannelId.value);
+      if (!channel || !('send' in channel)) {
+        return interaction.reply('❌ Killfeed channel not found.');
+      }
+
+      const weaponEmoji = getWeaponEmoji(weapon);
+      const distanceStr = distance ? `${distance.toFixed(0)}m` : "Unknown";
+      const locationStr = location || "Unknown";
+
+      const embed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle(`${weaponEmoji} Kill Feed`)
+        .addFields(
+          { name: "Killer", value: `\`${killer}\``, inline: true },
+          { name: "Victim", value: `\`${victim}\``, inline: true },
+          { name: "Weapon", value: weapon || "Unknown", inline: true },
+          { name: "Distance", value: distanceStr, inline: true },
+          { name: "Location", value: locationStr, inline: true }
+        )
+        .setTimestamp();
+
+      try {
+        await (channel as TextChannel).send({ embeds: [embed] });
+        await interaction.reply('✅ Kill posted to killfeed.');
+      } catch (error) {
+        console.error("Error posting kill:", error);
+        await interaction.reply('❌ Failed to post kill.');
+      }
+    }
+  }
+}
+
+function getWeaponEmoji(weapon?: string | null): string {
+  if (!weapon) return "🔫";
+  const lower = weapon.toLowerCase();
+  if (lower.includes("mosin") || lower.includes("sniper")) return "🎯";
+  if (lower.includes("ak") || lower.includes("rifle")) return "🔫";
+  if (lower.includes("shotgun")) return "🔱";
+  if (lower.includes("pistol") || lower.includes("glock")) return "🔶";
+  if (lower.includes("melee") || lower.includes("axe")) return "🪓";
+  if (lower.includes("grenade")) return "💣";
+  return "🔫";
+}
+
+async function handleCommand(message: Message) {
+  console.log(`Text command: ${message.content}`);
+}
+
+async function handleAutoMod(message: Message) {
+  // AutoMod logic here
+}
+
+async function handleModalSubmit(interaction: any) {
+  // Modal handling here
+}
+
+async function handleReactionAdd(reaction: MessageReaction, user: User) {
+  // Reaction add logic here
+}
+
+async function handleReactionRemove(reaction: MessageReaction, user: User) {
+  // Reaction remove logic here
+}}
   });
 
   // Handle Reactions
