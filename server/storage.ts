@@ -395,9 +395,3 @@ export class DatabaseStorage implements IStorage {
 }
 
 export const storage = new DatabaseStorage();
-
-  return await db.query.kills_log.findMany({
-    orderBy: (kills, { desc }) => [desc(kills.timestamp)],
-    limit,
-  });
-}
