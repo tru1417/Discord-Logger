@@ -20,6 +20,7 @@ import {
 import { storage } from "./storage";
 import { OpenAI } from "openai";
 import { createCanvas, loadImage } from "canvas";
+import { getRconStatus, getServerStatus, sayGlobal } from "./rcon";
 
 let client: Client | null = null;
 let openai: OpenAI | null = null;
@@ -755,6 +756,31 @@ async function registerSlashCommands(clientId: string, guildId: string) {
           .setDescription("View top factions by kills")
       ),
     new SlashCommandBuilder()
+      .setName("dayz")
+      .setDescription("DayZ server management")
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+      .addSubcommand((sub) =>
+        sub
+          .setName("status")
+          .setDescription("Check live DayZ server status and player count")
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("players")
+          .setDescription("List all players currently online")
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("say")
+          .setDescription("Send a global in-game server announcement")
+          .addStringOption((opt) =>
+            opt
+              .setName("message")
+              .setDescription("Message to broadcast to all players")
+              .setRequired(true)
+          )
+      ),
+    new SlashCommandBuilder()
       .setName("killfeed")
       .setDescription("DayZ killfeed management")
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
@@ -1317,6 +1343,123 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
     }
   }
 
+  if (commandName === "dayz") {
+    const subcommand = options.getSubcommand();
+
+    if (subcommand === "status") {
+      await interaction.deferReply();
+      const rcon = getRconStatus();
+
+      if (rcon.status === "unconfigured") {
+        return interaction.editReply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x99aab5)
+              .setTitle("🖥️ DayZ Server Status")
+              .setDescription("RCON is not configured. Set `DAYZ_RCON_HOST`, `DAYZ_RCON_PORT`, and `DAYZ_RCON_PASSWORD`.")
+              .setTimestamp()
+          ],
+        });
+      }
+
+      if (rcon.status !== "connected") {
+        return interaction.editReply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0xff0000)
+              .setTitle("🖥️ DayZ Server Status")
+              .addFields(
+                { name: "RCON", value: "🔴 Disconnected", inline: true },
+                { name: "Host", value: `${rcon.host}:${rcon.port}`, inline: true },
+                { name: "Error", value: rcon.error || "Unknown error" }
+              )
+              .setTimestamp()
+          ],
+        });
+      }
+
+      const server = await getServerStatus();
+      const playerBar = buildPlayerBar(server.players, server.maxPlayers);
+
+      const embed = new EmbedBuilder()
+        .setColor(server.online ? 0x57f287 : 0xff0000)
+        .setTitle("🖥️ DayZ Server Status")
+        .addFields(
+          { name: "Status", value: server.online ? "🟢 Online" : "🔴 Offline", inline: true },
+          { name: "Players", value: `${server.players} / ${server.maxPlayers}`, inline: true },
+          { name: "RCON", value: `🟢 Connected to \`${rcon.host}:${rcon.port}\``, inline: false },
+          { name: "Player Load", value: playerBar }
+        )
+        .setFooter({ text: "Live data via RCON" })
+        .setTimestamp();
+
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    if (subcommand === "players") {
+      await interaction.deferReply();
+      const rcon = getRconStatus();
+
+      if (rcon.status !== "connected") {
+        return interaction.editReply({ content: "❌ RCON is not connected." });
+      }
+
+      const server = await getServerStatus();
+
+      if (!server.online) {
+        return interaction.editReply({ content: "❌ Server is offline or unreachable." });
+      }
+
+      const listText = server.playerList.length > 0
+        ? server.playerList.map((p, i) => `\`${i + 1}.\` ${p}`).join("\n")
+        : "_No players online_";
+
+      const embed = new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle(`👥 Players Online — ${server.players}/${server.maxPlayers}`)
+        .setDescription(listText.substring(0, 4000))
+        .setFooter({ text: "Live data via RCON" })
+        .setTimestamp();
+
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    if (subcommand === "say") {
+      const message = options.getString("message", true);
+      await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+      const rcon = getRconStatus();
+      if (rcon.status !== "connected") {
+        return interaction.editReply({ content: "❌ RCON is not connected." });
+      }
+
+      try {
+        await sayGlobal(message);
+
+        await storage.createLog({
+          type: "rcon_say",
+          content: `${user.tag} broadcast in-game: ${message}`,
+          userId: user.id,
+          username: user.tag,
+          metadata: { message },
+        });
+
+        const embed = new EmbedBuilder()
+          .setColor(0x57f287)
+          .setTitle("📢 In-Game Announcement Sent")
+          .addFields(
+            { name: "Message", value: message },
+            { name: "Sent By", value: `<@${user.id}>`, inline: true }
+          )
+          .setTimestamp();
+
+        return interaction.editReply({ embeds: [embed] });
+      } catch (err: any) {
+        return interaction.editReply({ content: `❌ Failed to send: ${err.message}` });
+      }
+    }
+  }
+
   if (commandName === "killfeed") {
     const subcommand = options.getSubcommand();
 
@@ -1368,6 +1511,14 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       }
     }
   }
+}
+
+function buildPlayerBar(current: number, max: number): string {
+  const filledCount = Math.round((current / Math.max(max, 1)) * 10);
+  const filled = "█".repeat(filledCount);
+  const empty = "░".repeat(10 - filledCount);
+  const pct = Math.round((current / Math.max(max, 1)) * 100);
+  return `\`${filled}${empty}\` ${pct}% (${current}/${max})`;
 }
 
 function getWeaponEmoji(weapon?: string | null): string {

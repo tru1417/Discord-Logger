@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { initializeKeepAlive } from "./keepAlive";
 import { initializeDatabase } from "./db";
+import { initializeRcon } from "./rcon";
 
 const app = express();
 const httpServer = createServer(app);
@@ -74,6 +75,7 @@ process.on('uncaughtException', (err) => {
 
 (async () => {
   await initializeDatabase();
+  initializeRcon();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { initializeBot } from "./bot";
+import { getRconStatus, getServerStatus } from "./rcon";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -283,6 +284,16 @@ await initializeBot();
       console.error(err);
       res.status(500).send("Dashboard error");
     }
+  });
+
+  // RCON / DayZ Server Status
+  app.get("/api/dayz/status", async (_req, res) => {
+    const rcon = getRconStatus();
+    if (rcon.status !== "connected") {
+      return res.json({ rcon, server: null });
+    }
+    const server = await getServerStatus();
+    res.json({ rcon, server });
   });
 
   return httpServer;
