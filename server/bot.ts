@@ -752,6 +752,28 @@ async function registerSlashCommands(clientId: string, guildId: string) {
       )
       .addSubcommand((sub) =>
         sub
+          .setName("promote")
+          .setDescription("Promote a faction member to officer")
+          .addUserOption((opt) =>
+            opt
+              .setName("user")
+              .setDescription("The member to promote")
+              .setRequired(true)
+          )
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("demote")
+          .setDescription("Demote a faction officer back to member")
+          .addUserOption((opt) =>
+            opt
+              .setName("user")
+              .setDescription("The officer to demote")
+              .setRequired(true)
+          )
+      )
+      .addSubcommand((sub) =>
+        sub
           .setName("leaderboard")
           .setDescription("View top factions by kills")
       ),
@@ -1018,12 +1040,22 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       });
     }
 
-    const target = options.getMember("user");
-    if (!target)
-      return interaction.reply({ content: "❌ User not found in this server.", flags: [MessageFlags.Ephemeral] });
-
+    const targetUser = options.getUser("user", true);
     const duration = options.getInteger("duration", true);
     const reason = options.getString("reason") || "No reason provided";
+
+    // Always fetch a full GuildMember so .timeout() and .user are available
+    const target = await guild.members.fetch(targetUser.id).catch(() => null);
+
+    if (!target) {
+      return interaction.reply({ content: "❌ User not found in this server.", flags: [MessageFlags.Ephemeral] });
+    }
+    if (!target.moderatable) {
+      return interaction.reply({ content: "❌ I cannot timeout this user — they have a higher role than me or are a server administrator.", flags: [MessageFlags.Ephemeral] });
+    }
+    if (target.id === user.id) {
+      return interaction.reply({ content: "❌ You cannot timeout yourself.", flags: [MessageFlags.Ephemeral] });
+    }
 
     try {
       await target.timeout(duration * 60 * 1000, reason);
@@ -1036,6 +1068,8 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
         metadata: { reason, durationMins: duration, targetUserId: target.user.id },
       });
 
+      const expiresTs = Math.floor((Date.now() + duration * 60 * 1000) / 1000);
+
       const embed = new EmbedBuilder()
         .setColor(0xffd700)
         .setTitle("⏱️ Member Timed Out")
@@ -1043,14 +1077,16 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
           { name: "User", value: `<@${target.user.id}> (${target.user.tag})`, inline: true },
           { name: "Moderator", value: `<@${user.id}>`, inline: true },
           { name: "Duration", value: `${duration} minute${duration !== 1 ? "s" : ""}`, inline: true },
-          { name: "Expires", value: `<t:${Math.floor((Date.now() + duration * 60 * 1000) / 1000)}:R>`, inline: true },
+          { name: "Expires", value: `<t:${expiresTs}:R> (<t:${expiresTs}:t>)`, inline: true },
           { name: "Reason", value: reason }
         )
         .setThumbnail(target.user.displayAvatarURL())
         .setTimestamp();
+
       await interaction.reply({ embeds: [embed] });
-    } catch (error) {
-      await interaction.reply({ content: "❌ Failed to timeout user — they may have a higher role.", flags: [MessageFlags.Ephemeral] });
+    } catch (error: any) {
+      console.error("[timeout] Error:", error?.message);
+      await interaction.reply({ content: "❌ Failed to timeout user — check my role position and permissions.", flags: [MessageFlags.Ephemeral] });
     }
   }
 
@@ -1319,6 +1355,116 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       return interaction.reply({ embeds: [embed] });
     }
 
+    // ── PROMOTE ────────────────────────────────────────────────────────────
+    if (subcommand === "promote") {
+      const target = options.getUser("user", true);
+
+      const callerFaction = await storage.getFactionByMember(user.id);
+      if (!callerFaction) {
+        return interaction.reply({ content: "❌ You are not in a faction.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      const callerMember = await storage.getFactionMember(user.id);
+      if (callerMember?.rank !== "leader") {
+        return interaction.reply({ content: "❌ Only the faction leader can promote members.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      if (target.id === user.id) {
+        return interaction.reply({ content: "❌ You can't promote yourself.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      const targetMember = await storage.getFactionMember(target.id);
+      if (!targetMember || targetMember.factionId !== callerFaction.id) {
+        return interaction.reply({ content: `❌ <@${target.id}> is not in your faction.`, flags: [MessageFlags.Ephemeral] });
+      }
+
+      if (targetMember.rank === "officer") {
+        return interaction.reply({ content: `❌ <@${target.id}> is already an officer.`, flags: [MessageFlags.Ephemeral] });
+      }
+      if (targetMember.rank === "leader") {
+        return interaction.reply({ content: `❌ <@${target.id}> is already the leader.`, flags: [MessageFlags.Ephemeral] });
+      }
+
+      await storage.updateFactionMemberRank(callerFaction.id, target.id, "officer");
+
+      await storage.createLog({
+        type: "faction_promote",
+        content: `${user.tag} promoted ${target.tag} to officer in ${callerFaction.name}`,
+        userId: user.id,
+        username: user.tag,
+        metadata: { factionId: callerFaction.id, targetId: target.id },
+      });
+
+      const embed = new EmbedBuilder()
+        .setColor(0xffd700)
+        .setTitle(`⭐ Member Promoted — ${callerFaction.name} [${callerFaction.tag}]`)
+        .setDescription(`<@${target.id}> has been promoted to **Officer**.`)
+        .addFields(
+          { name: "Promoted By", value: `<@${user.id}>`, inline: true },
+          { name: "Member", value: `${target.tag}`, inline: true },
+          { name: "New Rank", value: "⭐ Officer", inline: true }
+        )
+        .setThumbnail(target.displayAvatarURL())
+        .setTimestamp();
+
+      return interaction.reply({ embeds: [embed] });
+    }
+
+    // ── DEMOTE ─────────────────────────────────────────────────────────────
+    if (subcommand === "demote") {
+      const target = options.getUser("user", true);
+
+      const callerFaction = await storage.getFactionByMember(user.id);
+      if (!callerFaction) {
+        return interaction.reply({ content: "❌ You are not in a faction.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      const callerMember = await storage.getFactionMember(user.id);
+      if (callerMember?.rank !== "leader") {
+        return interaction.reply({ content: "❌ Only the faction leader can demote members.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      if (target.id === user.id) {
+        return interaction.reply({ content: "❌ You can't demote yourself.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      const targetMember = await storage.getFactionMember(target.id);
+      if (!targetMember || targetMember.factionId !== callerFaction.id) {
+        return interaction.reply({ content: `❌ <@${target.id}> is not in your faction.`, flags: [MessageFlags.Ephemeral] });
+      }
+
+      if (targetMember.rank === "member") {
+        return interaction.reply({ content: `❌ <@${target.id}> is already a regular member.`, flags: [MessageFlags.Ephemeral] });
+      }
+      if (targetMember.rank === "leader") {
+        return interaction.reply({ content: "❌ You cannot demote the faction leader. Transfer leadership first.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      await storage.updateFactionMemberRank(callerFaction.id, target.id, "member");
+
+      await storage.createLog({
+        type: "faction_demote",
+        content: `${user.tag} demoted ${target.tag} to member in ${callerFaction.name}`,
+        userId: user.id,
+        username: user.tag,
+        metadata: { factionId: callerFaction.id, targetId: target.id },
+      });
+
+      const embed = new EmbedBuilder()
+        .setColor(0xff6b00)
+        .setTitle(`🔹 Member Demoted — ${callerFaction.name} [${callerFaction.tag}]`)
+        .setDescription(`<@${target.id}> has been demoted back to **Member**.`)
+        .addFields(
+          { name: "Demoted By", value: `<@${user.id}>`, inline: true },
+          { name: "Member", value: `${target.tag}`, inline: true },
+          { name: "New Rank", value: "🔹 Member", inline: true }
+        )
+        .setThumbnail(target.displayAvatarURL())
+        .setTimestamp();
+
+      return interaction.reply({ embeds: [embed] });
+    }
+
     // ── LEADERBOARD ────────────────────────────────────────────────────────
     if (subcommand === "leaderboard") {
       const topFactions = await storage.getTopFactions(10);
@@ -1327,16 +1473,32 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
         return interaction.reply({ content: "❌ No factions have been created yet.", flags: [MessageFlags.Ephemeral] });
       }
 
+      // Fetch member counts for all factions in parallel
+      const memberCounts = await Promise.all(
+        topFactions.map((f) => storage.getFactionMembers(f.id).then((m) => m.length))
+      );
+
       const medals = ["🥇", "🥈", "🥉"];
-      const leaderboard = topFactions
-        .map((f, i) => `${medals[i] ?? `**${i + 1}.**`} ${f.name} [${f.tag}] — **${f.kills} kills**`)
-        .join("\n");
+      const rows = topFactions.map((f, i) => {
+        const medal = medals[i] ?? `\`${i + 1}.\``;
+        const kd = f.kills > 0 ? f.kills : 0;
+        return `${medal} **${f.name}** [${f.tag}] — ${kd} kills • ${memberCounts[i]} members`;
+      });
+
+      // Split into two columns visually using fields
+      const half = Math.ceil(rows.length / 2);
+      const col1 = rows.slice(0, half).join("\n");
+      const col2 = rows.slice(half).join("\n");
 
       const embed = new EmbedBuilder()
         .setColor(0xffd700)
         .setTitle("🏆 Faction Leaderboard")
-        .setDescription(leaderboard)
-        .setFooter({ text: `${topFactions.length} factions ranked by total kills` })
+        .setDescription("Ranked by total kills across all time.")
+        .addFields(
+          { name: "Top Factions", value: col1, inline: col2.length > 0 },
+          ...(col2.length > 0 ? [{ name: "\u200b", value: col2, inline: true }] : [])
+        )
+        .setFooter({ text: `${topFactions.length} active faction${topFactions.length !== 1 ? "s" : ""} • Updated` })
         .setTimestamp();
 
       return interaction.reply({ embeds: [embed] });
