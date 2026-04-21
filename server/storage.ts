@@ -1,13 +1,17 @@
 import { db } from "./db";
 import {
   logs, cases, rules, roleConfigs, settings, roleListMembers,
-  kills_log, factions, faction_members, player_stats,
+  factions, factionMembers, killsLog, playerStats, dayzServers,
   type Log, type InsertLog,
   type Case, type InsertCase,
   type Rule, type InsertRule,
   type RoleConfig, type InsertRoleConfig,
   type Setting, type InsertSetting,
-  type RoleListMember, type InsertRoleListMember
+  type RoleListMember, type InsertRoleListMember,
+  type Faction, type InsertFaction,
+  type FactionMember,
+  type KillsLog,
+  type PlayerStats,
 } from "@shared/schema";
 import { eq, desc, and } from "drizzle-orm";
 
@@ -32,6 +36,7 @@ export interface IStorage {
   // Roles
   createRoleConfig(r: InsertRoleConfig): Promise<RoleConfig>;
   getRoleConfigs(): Promise<RoleConfig[]>;
+  getRoleConfigByReaction(messageId: string, emoji: string): Promise<RoleConfig | undefined>;
   updateRoleConfig(id: number, r: Partial<InsertRoleConfig>): Promise<RoleConfig>;
   deleteRoleConfig(id: number): Promise<void>;
 
@@ -49,7 +54,25 @@ export interface IStorage {
   // Stats
   getStats(): Promise<{ totalLogs: number; totalCases: number; recentActivity: Log[] }>;
 
-  // NEW — Kills / Factions / Player Stats
+  // Factions
+  createFaction(data: InsertFaction): Promise<Faction>;
+  getFaction(factionId: number): Promise<Faction | null>;
+  getFactionByName(name: string): Promise<Faction | null>;
+  getFactionByTag(tag: string): Promise<Faction | null>;
+  getFactionByMember(userId: string): Promise<Faction | null>;
+  getAllFactions(): Promise<Faction[]>;
+  updateFactionStats(factionId: number, updates: Partial<InsertFaction>): Promise<void>;
+  deleteFaction(factionId: number): Promise<void>;
+
+  // Faction Members
+  addFactionMember(factionId: number, userId: string, username: string, rank?: string): Promise<FactionMember>;
+  removeFactionMember(factionId: number, userId: string): Promise<void>;
+  getFactionMembers(factionId: number): Promise<FactionMember[]>;
+  getFactionMember(userId: string): Promise<FactionMember | null>;
+  updateFactionMemberRank(factionId: number, userId: string, newRank: string): Promise<void>;
+  getTopFactions(limit?: number): Promise<Faction[]>;
+
+  // Kill Log
   recordKill(kill: {
     killerId: string;
     killerName: string;
@@ -60,43 +83,15 @@ export interface IStorage {
     location?: string;
     serverId: number;
   }): Promise<void>;
+  getRecentKills(limit?: number): Promise<KillsLog[]>;
 
-  createFaction(data: any): Promise<any>;
-  getFaction(factionId: number): Promise<any | null>;
-  getFactionByName(name: string): Promise<any | null>;
-  getFactionByMember(userId: string): Promise<any | null>;
-
-  addFactionMember(
-    factionId: number,
-    userId: string,
-    username: string,
-    rank?: string
-  ): Promise<any>;
-
-  removeFactionMember(factionId: number, userId: string): Promise<void>;
-  getFactionMembers(factionId: number): Promise<any[]>;
-
-  updateFactionMemberRank(
-    factionId: number,
-    userId: string,
-    newRank: string
-  ): Promise<void>;
-
-  updateFactionStats(
-    factionId: number,
-    updates: any
-  ): Promise<void>;
-
-  getTopFactions(limit?: number): Promise<any[]>;
-
-  getPlayerStats(userId: string, serverId: number): Promise<any | null>;
-  updatePlayerStats(userId: string, updates: any): Promise<void>;
-
-  getRecentKills(limit?: number): Promise<any[]>;
+  // Player Stats
+  getPlayerStats(userId: string, serverId: number): Promise<PlayerStats | null>;
+  updatePlayerStats(userId: string, updates: Partial<PlayerStats>): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
-  // Logs
+  // ── Logs ────────────────────────────────────────────────────────────────
   async createLog(log: InsertLog): Promise<Log> {
     const [newLog] = await db.insert(logs).values(log).returning();
     return newLog;
@@ -112,7 +107,7 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(cases.timestamp));
   }
 
-  // Cases
+  // ── Cases ────────────────────────────────────────────────────────────────
   async createCase(c: InsertCase): Promise<Case> {
     const [newCase] = await db.insert(cases).values(c).returning();
     return newCase;
@@ -128,10 +123,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateCase(id: number, c: Partial<InsertCase>): Promise<Case> {
-    const [updated] = await db.update(cases)
-      .set(c)
-      .where(eq(cases.id, id))
-      .returning();
+    const [updated] = await db.update(cases).set(c).where(eq(cases.id, id)).returning();
     return updated;
   }
 
@@ -139,7 +131,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(cases).where(eq(cases.id, id));
   }
 
-  // Rules
+  // ── Rules ────────────────────────────────────────────────────────────────
   async createRule(r: InsertRule): Promise<Rule> {
     const [newRule] = await db.insert(rules).values(r).returning();
     return newRule;
@@ -153,7 +145,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(rules).where(eq(rules.id, id));
   }
 
-  // Role Configs
+  // ── Role Configs ─────────────────────────────────────────────────────────
   async createRoleConfig(r: InsertRoleConfig): Promise<RoleConfig> {
     const [newRole] = await db.insert(roleConfigs).values(r).returning();
     return newRole;
@@ -163,11 +155,15 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(roleConfigs).orderBy(desc(roleConfigs.rank));
   }
 
+  async getRoleConfigByReaction(messageId: string, emoji: string): Promise<RoleConfig | undefined> {
+    const [rc] = await db.select().from(roleConfigs).where(
+      and(eq(roleConfigs.reactionMessageId, messageId), eq(roleConfigs.reactionEmoji, emoji))
+    );
+    return rc;
+  }
+
   async updateRoleConfig(id: number, r: Partial<InsertRoleConfig>): Promise<RoleConfig> {
-    const [updated] = await db.update(roleConfigs)
-      .set(r)
-      .where(eq(roleConfigs.id, id))
-      .returning();
+    const [updated] = await db.update(roleConfigs).set(r).where(eq(roleConfigs.id, id)).returning();
     return updated;
   }
 
@@ -175,7 +171,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(roleConfigs).where(eq(roleConfigs.id, id));
   }
 
-  // Settings
+  // ── Settings ─────────────────────────────────────────────────────────────
   async getSetting(key: string): Promise<Setting | undefined> {
     const [s] = await db.select().from(settings).where(eq(settings.key, key));
     return s;
@@ -194,19 +190,20 @@ export class DatabaseStorage implements IStorage {
     return newSetting;
   }
 
-  // Role List Members
+  // ── Role List Members ────────────────────────────────────────────────────
   async addRoleListMember(m: InsertRoleListMember): Promise<RoleListMember> {
     const [entry] = await db.insert(roleListMembers).values(m).returning();
     return entry;
   }
 
   async isRoleListMember(roleId: string, userId: string): Promise<boolean> {
-    const [existing] = await db.select().from(roleListMembers)
-      .where(and(
+    const [existing] = await db.select().from(roleListMembers).where(
+      and(
         eq(roleListMembers.roleId, roleId),
         eq(roleListMembers.userId, userId),
         eq(roleListMembers.action, "add")
-      ));
+      )
+    );
     return !!existing;
   }
 
@@ -237,12 +234,11 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
-  // Stats
+  // ── Stats ────────────────────────────────────────────────────────────────
   async getStats(): Promise<{ totalLogs: number; totalCases: number; recentActivity: Log[] }> {
     const logsCount = await db.select().from(logs);
     const casesCount = await db.select().from(cases);
     const recent = await db.select().from(logs).orderBy(desc(logs.timestamp)).limit(5);
-
     return {
       totalLogs: logsCount.length,
       totalCases: casesCount.length,
@@ -250,7 +246,102 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  // NEW — Kills / Factions / Player Stats
+  // ── Factions ─────────────────────────────────────────────────────────────
+  async createFaction(data: InsertFaction): Promise<Faction> {
+    const [faction] = await db.insert(factions).values(data).returning();
+    return faction;
+  }
+
+  async getFaction(factionId: number): Promise<Faction | null> {
+    const [f] = await db.select().from(factions).where(eq(factions.id, factionId));
+    return f ?? null;
+  }
+
+  async getFactionByName(name: string): Promise<Faction | null> {
+    const [f] = await db.select().from(factions)
+      .where(eq(factions.name, name));
+    return f ?? null;
+  }
+
+  async getFactionByTag(tag: string): Promise<Faction | null> {
+    const [f] = await db.select().from(factions)
+      .where(eq(factions.tag, tag));
+    return f ?? null;
+  }
+
+  async getFactionByMember(userId: string): Promise<Faction | null> {
+    const [member] = await db.select().from(factionMembers)
+      .where(eq(factionMembers.userId, userId));
+    if (!member) return null;
+    return this.getFaction(member.factionId);
+  }
+
+  async getAllFactions(): Promise<Faction[]> {
+    return await db.select().from(factions)
+      .where(eq(factions.status, "active"))
+      .orderBy(desc(factions.kills));
+  }
+
+  async updateFactionStats(factionId: number, updates: Partial<InsertFaction>): Promise<void> {
+    await db.update(factions).set(updates).where(eq(factions.id, factionId));
+  }
+
+  async deleteFaction(factionId: number): Promise<void> {
+    await db.delete(factionMembers).where(eq(factionMembers.factionId, factionId));
+    await db.delete(factions).where(eq(factions.id, factionId));
+  }
+
+  async getTopFactions(limit = 10): Promise<Faction[]> {
+    return await db.select().from(factions)
+      .where(eq(factions.status, "active"))
+      .orderBy(desc(factions.kills))
+      .limit(limit);
+  }
+
+  // ── Faction Members ──────────────────────────────────────────────────────
+  async addFactionMember(
+    factionId: number,
+    userId: string,
+    username: string,
+    rank = "member"
+  ): Promise<FactionMember> {
+    const [member] = await db.insert(factionMembers).values({
+      factionId,
+      userId,
+      username,
+      rank,
+      kills: 0,
+      deaths: 0,
+      playtimeHours: 0,
+      rolePermissions: {},
+    }).returning();
+    return member;
+  }
+
+  async removeFactionMember(factionId: number, userId: string): Promise<void> {
+    await db.delete(factionMembers).where(
+      and(eq(factionMembers.factionId, factionId), eq(factionMembers.userId, userId))
+    );
+  }
+
+  async getFactionMembers(factionId: number): Promise<FactionMember[]> {
+    return await db.select().from(factionMembers)
+      .where(eq(factionMembers.factionId, factionId));
+  }
+
+  async getFactionMember(userId: string): Promise<FactionMember | null> {
+    const [m] = await db.select().from(factionMembers)
+      .where(eq(factionMembers.userId, userId));
+    return m ?? null;
+  }
+
+  async updateFactionMemberRank(factionId: number, userId: string, newRank: string): Promise<void> {
+    await db.update(factionMembers)
+      .set({ rank: newRank })
+      .where(and(eq(factionMembers.factionId, factionId), eq(factionMembers.userId, userId)));
+  }
+
+  // ── Kill Log ─────────────────────────────────────────────────────────────
   async recordKill(kill: {
     killerId: string;
     killerName: string;
@@ -261,136 +352,34 @@ export class DatabaseStorage implements IStorage {
     location?: string;
     serverId: number;
   }): Promise<void> {
-    await db.insert(kills_log).values({
-      server_id: kill.serverId,
-      killer_id: kill.killerId,
-      killer_name: kill.killerName,
-      victim_id: kill.victimId,
-      victim_name: kill.victimName,
+    await db.insert(killsLog).values({
+      serverId: kill.serverId,
+      killerId: kill.killerId,
+      killerName: kill.killerName,
+      victimId: kill.victimId,
+      victimName: kill.victimName,
       weapon: kill.weapon,
       distance: kill.distance,
       location: kill.location,
-      timestamp: new Date(),
     });
   }
 
-  async createFaction(data: any): Promise<any> {
-    const result = await db.insert(factions).values(data).returning();
-    return result[0];
+  async getRecentKills(limit = 10): Promise<KillsLog[]> {
+    return await db.select().from(killsLog)
+      .orderBy(desc(killsLog.timestamp))
+      .limit(limit);
   }
 
-  async getFaction(factionId: number): Promise<any | null> {
-    return await db.query.factions.findFirst({
-      where: (f, { eq }) => eq(f.id, factionId),
-    });
-  }
-
-  async getFactionByName(name: string): Promise<any | null> {
-    return await db.query.factions.findFirst({
-      where: (f, { eq }) => eq(f.name, name),
-    });
-  }
-
-  async getFactionByMember(userId: string): Promise<any | null> {
-    const member = await db.query.faction_members.findFirst({
-      where: (m, { eq }) => eq(m.user_id, userId),
-    });
-    if (!member) return null;
-    return await this.getFaction(member.faction_id);
-  }
-
-  async addFactionMember(
-    factionId: number,
-    userId: string,
-    username: string,
-    rank: string = "member"
-  ): Promise<any> {
-    const result = await db.insert(faction_members).values({
-      faction_id: factionId,
-      user_id: userId,
-      username,
-      rank,
-      kills: 0,
-      deaths: 0,
-      playtime_hours: 0,
-      role_permissions: {},
-    }).returning();
-    return result[0];
-  }
-
-  async removeFactionMember(factionId: number, userId: string): Promise<void> {
-    await db.delete(faction_members).where(
-      and(
-        eq(faction_members.faction_id, factionId),
-        eq(faction_members.user_id, userId)
-      )
+  // ── Player Stats ─────────────────────────────────────────────────────────
+  async getPlayerStats(userId: string, serverId: number): Promise<PlayerStats | null> {
+    const [stats] = await db.select().from(playerStats).where(
+      and(eq(playerStats.userId, userId), eq(playerStats.serverId, serverId))
     );
+    return stats ?? null;
   }
 
-  async getFactionMembers(factionId: number): Promise<any[]> {
-    return await db.query.faction_members.findMany({
-      where: (m, { eq }) => eq(m.faction_id, factionId),
-    });
-  }
-
-  async updateFactionMemberRank(
-    factionId: number,
-    userId: string,
-    newRank: string
-  ): Promise<void> {
-    await db.update(faction_members)
-      .set({ rank: newRank })
-      .where(
-        and(
-          eq(faction_members.faction_id, factionId),
-          eq(faction_members.user_id, userId)
-        )
-      );
-  }
-
-  async updateFactionStats(
-    factionId: number,
-    updates: any
-  ): Promise<void> {
-    await db.update(factions)
-      .set(updates)
-      .where(eq(factions.id, factionId));
-  }
-
-  async getTopFactions(limit: number = 10): Promise<any[]> {
-    return await db.query.factions.findMany({
-      orderBy: (f, { desc }) => [desc(f.kills)],
-      limit,
-    });
-  }
-
-  async getPlayerStats(
-    userId: string,
-    serverId: number
-  ): Promise<any | null> {
-    return await db.query.player_stats.findFirst({
-      where: (stats, { and, eq }) =>
-        and(
-          eq(stats.user_id, userId),
-          eq(stats.server_id, serverId)
-        ),
-    });
-  }
-
-  async updatePlayerStats(
-    userId: string,
-    updates: any
-  ): Promise<void> {
-    await db.update(player_stats)
-      .set(updates)
-      .where(eq(player_stats.user_id, userId));
-  }
-
-  async getRecentKills(limit: number = 10): Promise<any[]> {
-    return await db.query.kills_log.findMany({
-      orderBy: (k, { desc }) => [desc(k.timestamp)],
-      limit,
-    });
+  async updatePlayerStats(userId: string, updates: Partial<PlayerStats>): Promise<void> {
+    await db.update(playerStats).set(updates).where(eq(playerStats.userId, userId));
   }
 }
 

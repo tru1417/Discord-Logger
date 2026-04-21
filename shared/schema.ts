@@ -86,7 +86,36 @@ export const factionMembers = pgTable("faction_members", {
   userId: text("user_id").notNull(),
   username: text("username").notNull(),
   rank: text("rank").default("member").notNull(), // leader | officer | member
+  kills: integer("kills").default(0).notNull(),
+  deaths: integer("deaths").default(0).notNull(),
+  playtimeHours: integer("playtime_hours").default(0).notNull(),
+  rolePermissions: jsonb("role_permissions").default({}).notNull(),
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
+});
+
+// ── DayZ Kill Log ──────────────────────────────────────────────────────────
+export const killsLog = pgTable("kills_log", {
+  id: serial("id").primaryKey(),
+  serverId: integer("server_id").notNull(),
+  killerId: text("killer_id").notNull(),
+  killerName: text("killer_name").notNull(),
+  victimId: text("victim_id").notNull(),
+  victimName: text("victim_name").notNull(),
+  weapon: text("weapon"),
+  distance: integer("distance"),
+  location: text("location"),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+});
+
+// ── DayZ Player Stats ──────────────────────────────────────────────────────
+export const playerStats = pgTable("player_stats", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  serverId: integer("server_id").notNull(),
+  kills: integer("kills").default(0).notNull(),
+  deaths: integer("deaths").default(0).notNull(),
+  playtimeHours: integer("playtime_hours").default(0).notNull(),
+  lastSeen: timestamp("last_seen").defaultNow().notNull(),
 });
 
 // ── DayZ Server Tracking ───────────────────────────────────────────────────
@@ -106,6 +135,8 @@ export const insertSettingsSchema = createInsertSchema(settings).omit({ id: true
 export const insertRoleListMemberSchema = createInsertSchema(roleListMembers).omit({ id: true, timestamp: true });
 export const insertFactionSchema = createInsertSchema(factions).omit({ id: true, createdAt: true });
 export const insertFactionMemberSchema = createInsertSchema(factionMembers).omit({ id: true, joinedAt: true });
+export const insertKillsLogSchema = createInsertSchema(killsLog).omit({ id: true, timestamp: true });
+export const insertPlayerStatsSchema = createInsertSchema(playerStats).omit({ id: true, lastSeen: true });
 export const insertDayzServerSchema = createInsertSchema(dayzServers).omit({ id: true, createdAt: true });
 
 export type Log = typeof logs.$inferSelect;
@@ -131,6 +162,12 @@ export type InsertFaction = z.infer<typeof insertFactionSchema>;
 
 export type FactionMember = typeof factionMembers.$inferSelect;
 export type InsertFactionMember = z.infer<typeof insertFactionMemberSchema>;
+
+export type KillsLog = typeof killsLog.$inferSelect;
+export type InsertKillsLog = z.infer<typeof insertKillsLogSchema>;
+
+export type PlayerStats = typeof playerStats.$inferSelect;
+export type InsertPlayerStats = z.infer<typeof insertPlayerStatsSchema>;
 
 export type DayzServer = typeof dayzServers.$inferSelect;
 export type InsertDayzServer = z.infer<typeof insertDayzServerSchema>;
