@@ -724,6 +724,33 @@ async function registerSlashCommands(clientId: string, guildId: string) {
       )
       .addSubcommand((sub) =>
         sub
+          .setName("invite")
+          .setDescription("Invite a Discord user to your faction")
+          .addUserOption((opt) =>
+            opt
+              .setName("user")
+              .setDescription("The user to invite")
+              .setRequired(true)
+          )
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("kick")
+          .setDescription("Remove a member from your faction")
+          .addUserOption((opt) =>
+            opt
+              .setName("user")
+              .setDescription("The user to remove")
+              .setRequired(true)
+          )
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("leave")
+          .setDescription("Leave your current faction")
+      )
+      .addSubcommand((sub) =>
+        sub
           .setName("leaderboard")
           .setDescription("View top factions by kills")
       ),
@@ -810,7 +837,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
     const target = options.getUser("user", true);
     const reason = options.getString("reason") || "No reason provided";
 
-    await storage.createCase({
+    const c = await storage.createCase({
       type: "warn",
       targetId: target.id,
       targetName: target.tag,
@@ -820,7 +847,18 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       active: true,
     });
 
-    await interaction.reply(`Warned ${target.tag} for: ${reason}`);
+    const embed = new EmbedBuilder()
+      .setColor(0xffa500)
+      .setTitle("⚠️ Member Warned")
+      .addFields(
+        { name: "User", value: `<@${target.id}> (${target.tag})`, inline: true },
+        { name: "Moderator", value: `<@${user.id}>`, inline: true },
+        { name: "Case #", value: `${c.id}`, inline: true },
+        { name: "Reason", value: reason }
+      )
+      .setThumbnail(target.displayAvatarURL())
+      .setTimestamp();
+    await interaction.reply({ embeds: [embed] });
   }
 
   if (commandName === "kick") {
@@ -832,13 +870,14 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
     }
     const target = options.getMember("user");
     if (!target || !("kick" in target))
-      return interaction.reply("User not found in this server.");
-    if (!target.kickable) return interaction.reply("I cannot kick this user.");
+      return interaction.reply({ content: "❌ User not found in this server.", flags: [MessageFlags.Ephemeral] });
+    if (!target.kickable)
+      return interaction.reply({ content: "❌ I cannot kick this user (higher role).", flags: [MessageFlags.Ephemeral] });
 
     const reason = options.getString("reason") || "No reason provided";
     await target.kick(reason);
 
-    await storage.createCase({
+    const c = await storage.createCase({
       type: "kick",
       targetId: target.user.id,
       targetName: target.user.tag,
@@ -848,7 +887,18 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       active: false,
     });
 
-    await interaction.reply(`Kicked ${target.user.tag} for: ${reason}`);
+    const embed = new EmbedBuilder()
+      .setColor(0xff6b00)
+      .setTitle("👢 Member Kicked")
+      .addFields(
+        { name: "User", value: `${target.user.tag}`, inline: true },
+        { name: "Moderator", value: `<@${user.id}>`, inline: true },
+        { name: "Case #", value: `${c.id}`, inline: true },
+        { name: "Reason", value: reason }
+      )
+      .setThumbnail(target.user.displayAvatarURL())
+      .setTimestamp();
+    await interaction.reply({ embeds: [embed] });
   }
 
   if (commandName === "ban") {
@@ -860,13 +910,14 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
     }
     const target = options.getMember("user");
     if (!target || !("ban" in target))
-      return interaction.reply("User not found in this server.");
-    if (!target.bannable) return interaction.reply("I cannot ban this user.");
+      return interaction.reply({ content: "❌ User not found in this server.", flags: [MessageFlags.Ephemeral] });
+    if (!target.bannable)
+      return interaction.reply({ content: "❌ I cannot ban this user (higher role).", flags: [MessageFlags.Ephemeral] });
 
     const reason = options.getString("reason") || "No reason provided";
     await target.ban({ reason });
 
-    await storage.createCase({
+    const c = await storage.createCase({
       type: "ban",
       targetId: target.user.id,
       targetName: target.user.tag,
@@ -876,33 +927,65 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       active: true,
     });
 
-    await interaction.reply(`Banned ${target.user.tag} for: ${reason}`);
+    const embed = new EmbedBuilder()
+      .setColor(0xff0000)
+      .setTitle("🔨 Member Banned")
+      .addFields(
+        { name: "User", value: `${target.user.tag}`, inline: true },
+        { name: "Moderator", value: `<@${user.id}>`, inline: true },
+        { name: "Case #", value: `${c.id}`, inline: true },
+        { name: "Reason", value: reason }
+      )
+      .setThumbnail(target.user.displayAvatarURL())
+      .setTimestamp();
+    await interaction.reply({ embeds: [embed] });
   }
 
   if (commandName === "logs") {
     const target = options.getUser("user", true);
-    const logs = await storage.getLogs(50);
-    const userLogs = logs.filter((l) => l.userId === target.id);
+    const allLogs = await storage.getLogs(100);
+    const userLogs = allLogs.filter((l) => l.userId === target.id);
 
     if (userLogs.length === 0) {
-      return interaction.reply(`No logs found for ${target.tag}.`);
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x5865f2)
+            .setTitle(`📋 Logs — ${target.tag}`)
+            .setDescription("No logs found for this user.")
+            .setThumbnail(target.displayAvatarURL())
+            .setTimestamp()
+        ],
+      });
     }
 
-    const logSummary = userLogs
-      .slice(0, 5)
-      .map((l) => `[${l.type}] ${l.content}`)
+    const logLines = userLogs
+      .slice(0, 8)
+      .map((l) => `\`${l.type}\` — ${l.content.substring(0, 80)}`)
       .join("\n");
-    await interaction.reply(`Recent logs for ${target.tag}:\n${logSummary}`);
+
+    const embed = new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle(`📋 Logs — ${target.tag}`)
+      .setDescription(logLines)
+      .setFooter({ text: `Showing ${Math.min(userLogs.length, 8)} of ${userLogs.length} entries` })
+      .setThumbnail(target.displayAvatarURL())
+      .setTimestamp();
+    await interaction.reply({ embeds: [embed] });
   }
 
   if (commandName === "ping") {
-    await interaction.reply("Pong!");
+    const ping = interaction.client.ws.ping;
+    const embed = new EmbedBuilder()
+      .setColor(0x57f287)
+      .setTitle("🏓 Pong!")
+      .addFields({ name: "Latency", value: `${ping}ms`, inline: true })
+      .setTimestamp();
+    await interaction.reply({ embeds: [embed] });
   }
 
   if (commandName === "timeout") {
-    if (
-      !interaction.memberPermissions?.has(PermissionFlagsBits.ModerateMembers)
-    ) {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ModerateMembers)) {
       return interaction.reply({
         content: "❌ You need the Moderate Members permission.",
         flags: [MessageFlags.Ephemeral],
@@ -910,127 +993,327 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
     }
 
     const target = options.getMember("user");
-    if (!target) return interaction.reply("User not found in this server.");
+    if (!target)
+      return interaction.reply({ content: "❌ User not found in this server.", flags: [MessageFlags.Ephemeral] });
 
     const duration = options.getInteger("duration", true);
     const reason = options.getString("reason") || "No reason provided";
 
     try {
       await target.timeout(duration * 60 * 1000, reason);
-      await interaction.reply(
-        `⏱️ ${target.user.tag} has been timed out for ${duration} minutes.`
-      );
+
+      await storage.createLog({
+        type: "timeout",
+        content: `${user.tag} timed out ${target.user.tag} for ${duration} minute(s): ${reason}`,
+        userId: user.id,
+        username: user.tag,
+        metadata: { reason, durationMins: duration, targetUserId: target.user.id },
+      });
+
+      const embed = new EmbedBuilder()
+        .setColor(0xffd700)
+        .setTitle("⏱️ Member Timed Out")
+        .addFields(
+          { name: "User", value: `<@${target.user.id}> (${target.user.tag})`, inline: true },
+          { name: "Moderator", value: `<@${user.id}>`, inline: true },
+          { name: "Duration", value: `${duration} minute${duration !== 1 ? "s" : ""}`, inline: true },
+          { name: "Expires", value: `<t:${Math.floor((Date.now() + duration * 60 * 1000) / 1000)}:R>`, inline: true },
+          { name: "Reason", value: reason }
+        )
+        .setThumbnail(target.user.displayAvatarURL())
+        .setTimestamp();
+      await interaction.reply({ embeds: [embed] });
     } catch (error) {
-      await interaction.reply("❌ Failed to timeout user.");
+      await interaction.reply({ content: "❌ Failed to timeout user — they may have a higher role.", flags: [MessageFlags.Ephemeral] });
     }
   }
 
   if (commandName === "faction") {
     const subcommand = options.getSubcommand();
 
+    // ── CREATE ─────────────────────────────────────────────────────────────
     if (subcommand === "create") {
-      const name = options.getString("name", true);
-      const tag = options.getString("tag", true);
+      const name = options.getString("name", true).trim();
+      const tag = options.getString("tag", true).trim().toUpperCase();
 
-      if (tag.length < 3 || tag.length > 5) {
-        return interaction.reply("❌ Tag must be 3-5 characters.");
+      if (tag.length < 2 || tag.length > 5) {
+        return interaction.reply({ content: "❌ Tag must be 2-5 characters.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      const [existingName, existingTag, existingMembership] = await Promise.all([
+        storage.getFactionByName(name),
+        storage.getFactionByTag(tag),
+        storage.getFactionByMember(user.id),
+      ]);
+
+      if (existingName) {
+        return interaction.reply({ content: `❌ A faction named **${name}** already exists.`, flags: [MessageFlags.Ephemeral] });
+      }
+      if (existingTag) {
+        return interaction.reply({ content: `❌ The tag **[${tag}]** is already taken.`, flags: [MessageFlags.Ephemeral] });
+      }
+      if (existingMembership) {
+        return interaction.reply({ content: `❌ You are already in **${existingMembership.name}**. Leave it first.`, flags: [MessageFlags.Ephemeral] });
       }
 
       const faction = await storage.createFaction({
         name,
         tag,
-        leader_id: user.id,
-        leader_name: user.tag,
+        leaderId: user.id,
+        leaderName: user.username,
         description: "No description set.",
         color: "#5865F2",
         hq: "Unknown",
         kills: 0,
-        treasury: 0,
-        territory: "None",
-        allies: [],
-        enemies: [],
         status: "active",
       });
 
-      if (!faction) {
-        return interaction.reply("❌ Failed to create faction.");
-      }
+      await storage.addFactionMember(faction.id, user.id, user.username, "leader");
 
-      await storage.addFactionMember(faction.id, user.id, user.tag, "leader");
-      await interaction.reply(
-        `✅ Faction **${name}** [${tag}] created! You are the leader.`
-      );
+      await storage.createLog({
+        type: "faction_create",
+        content: `${user.tag} created faction ${name} [${tag}]`,
+        userId: user.id,
+        username: user.tag,
+        metadata: { factionId: faction.id, factionName: name, tag },
+      });
+
+      const embed = new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle(`🏴 Faction Created: ${name} [${tag}]`)
+        .setDescription("Your faction is now active. Use `/faction invite` to recruit members.")
+        .addFields(
+          { name: "Leader", value: `<@${user.id}>`, inline: true },
+          { name: "Tag", value: `[${tag}]`, inline: true },
+          { name: "Status", value: "🟢 Active", inline: true },
+          { name: "Kills", value: "0", inline: true },
+          { name: "Members", value: "1", inline: true },
+          { name: "HQ", value: "Unknown", inline: true },
+          { name: "Description", value: "No description set." }
+        )
+        .setFooter({ text: `Faction ID: ${faction.id} • Created by ${user.tag}` })
+        .setTimestamp();
+
+      return interaction.reply({ embeds: [embed] });
     }
 
+    // ── INVITE ─────────────────────────────────────────────────────────────
+    if (subcommand === "invite") {
+      const target = options.getUser("user", true);
+
+      if (target.id === user.id) {
+        return interaction.reply({ content: "❌ You can't invite yourself.", flags: [MessageFlags.Ephemeral] });
+      }
+      if (target.bot) {
+        return interaction.reply({ content: "❌ You can't invite bots.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      const callerFaction = await storage.getFactionByMember(user.id);
+      if (!callerFaction) {
+        return interaction.reply({ content: "❌ You are not in a faction.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      const callerMember = await storage.getFactionMember(user.id);
+      if (!callerMember || !["leader", "officer"].includes(callerMember.rank)) {
+        return interaction.reply({ content: "❌ Only the faction leader or officers can invite members.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      const targetFaction = await storage.getFactionByMember(target.id);
+      if (targetFaction) {
+        return interaction.reply({ content: `❌ <@${target.id}> is already in **${targetFaction.name}**.`, flags: [MessageFlags.Ephemeral] });
+      }
+
+      await storage.addFactionMember(callerFaction.id, target.id, target.username, "member");
+
+      await storage.createLog({
+        type: "faction_invite",
+        content: `${user.tag} invited ${target.tag} to faction ${callerFaction.name}`,
+        userId: user.id,
+        username: user.tag,
+        metadata: { factionId: callerFaction.id, targetId: target.id, targetTag: target.tag },
+      });
+
+      const members = await storage.getFactionMembers(callerFaction.id);
+
+      const embed = new EmbedBuilder()
+        .setColor(callerFaction.color as any)
+        .setTitle(`✅ Member Invited — ${callerFaction.name} [${callerFaction.tag}]`)
+        .setDescription(`<@${target.id}> has been added to the faction.`)
+        .addFields(
+          { name: "Invited By", value: `<@${user.id}>`, inline: true },
+          { name: "New Member", value: `<@${target.id}> (${target.tag})`, inline: true },
+          { name: "Rank", value: "Member", inline: true },
+          { name: "Total Members", value: `${members.length}`, inline: true }
+        )
+        .setThumbnail(target.displayAvatarURL())
+        .setTimestamp();
+
+      return interaction.reply({ embeds: [embed] });
+    }
+
+    // ── KICK (from faction) ────────────────────────────────────────────────
+    if (subcommand === "kick") {
+      const target = options.getUser("user", true);
+
+      const callerFaction = await storage.getFactionByMember(user.id);
+      if (!callerFaction) {
+        return interaction.reply({ content: "❌ You are not in a faction.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      const callerMember = await storage.getFactionMember(user.id);
+      if (!callerMember || callerMember.rank !== "leader") {
+        return interaction.reply({ content: "❌ Only the faction leader can remove members.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      if (target.id === user.id) {
+        return interaction.reply({ content: "❌ You can't kick yourself. Use `/faction leave` to disband.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      const targetMember = await storage.getFactionMember(target.id);
+      if (!targetMember || targetMember.factionId !== callerFaction.id) {
+        return interaction.reply({ content: `❌ <@${target.id}> is not in your faction.`, flags: [MessageFlags.Ephemeral] });
+      }
+
+      await storage.removeFactionMember(callerFaction.id, target.id);
+
+      await storage.createLog({
+        type: "faction_kick",
+        content: `${user.tag} removed ${target.tag} from faction ${callerFaction.name}`,
+        userId: user.id,
+        username: user.tag,
+        metadata: { factionId: callerFaction.id, targetId: target.id },
+      });
+
+      const embed = new EmbedBuilder()
+        .setColor(0xff6b00)
+        .setTitle(`👢 Member Removed — ${callerFaction.name} [${callerFaction.tag}]`)
+        .setDescription(`<@${target.id}> has been removed from the faction.`)
+        .addFields(
+          { name: "Removed By", value: `<@${user.id}>`, inline: true },
+          { name: "Member", value: `${target.tag}`, inline: true }
+        )
+        .setTimestamp();
+
+      return interaction.reply({ embeds: [embed] });
+    }
+
+    // ── LEAVE ──────────────────────────────────────────────────────────────
+    if (subcommand === "leave") {
+      const callerFaction = await storage.getFactionByMember(user.id);
+      if (!callerFaction) {
+        return interaction.reply({ content: "❌ You are not in a faction.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      const callerMember = await storage.getFactionMember(user.id);
+      if (callerMember?.rank === "leader") {
+        return interaction.reply({ content: "❌ Leaders cannot leave — transfer leadership or disband the faction first.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      await storage.removeFactionMember(callerFaction.id, user.id);
+
+      await storage.createLog({
+        type: "faction_leave",
+        content: `${user.tag} left faction ${callerFaction.name}`,
+        userId: user.id,
+        username: user.tag,
+        metadata: { factionId: callerFaction.id },
+      });
+
+      const embed = new EmbedBuilder()
+        .setColor(0x99aab5)
+        .setTitle(`🚪 Left Faction — ${callerFaction.name}`)
+        .setDescription(`You have left **${callerFaction.name} [${callerFaction.tag}]**.`)
+        .setTimestamp();
+
+      return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+    }
+
+    // ── INFO ───────────────────────────────────────────────────────────────
     if (subcommand === "info") {
       const factionName = options.getString("faction", true);
       const faction = await storage.getFactionByName(factionName);
 
       if (!faction) {
-        return interaction.reply("❌ Faction not found.");
+        return interaction.reply({ content: "❌ Faction not found.", flags: [MessageFlags.Ephemeral] });
       }
+
+      const members = await storage.getFactionMembers(faction.id);
+      const officers = members.filter((m) => m.rank === "officer").length;
+      const statusEmoji = faction.status === "active" ? "🟢" : "🔴";
+      const foundedTs = Math.floor(new Date(faction.createdAt).getTime() / 1000);
 
       const embed = new EmbedBuilder()
         .setColor(faction.color as any)
-        .setTitle(`${faction.name} [${faction.tag}]`)
+        .setTitle(`🏴 ${faction.name} [${faction.tag}]`)
+        .setDescription(faction.description)
         .addFields(
-          { name: "Leader", value: faction.leader_name, inline: true },
-          { name: "Status", value: faction.status, inline: true },
-          { name: "Kills", value: faction.kills.toString(), inline: true },
-          { name: "Treasury", value: `$${faction.treasury}`, inline: true },
-          { name: "Territory", value: faction.territory, inline: true },
+          { name: "Leader", value: `<@${faction.leaderId}>`, inline: true },
+          { name: "Status", value: `${statusEmoji} ${faction.status.charAt(0).toUpperCase() + faction.status.slice(1)}`, inline: true },
           { name: "HQ", value: faction.hq, inline: true },
-          { name: "Description", value: faction.description }
-        );
+          { name: "Total Kills", value: `${faction.kills}`, inline: true },
+          { name: "Members", value: `${members.length}`, inline: true },
+          { name: "Officers", value: `${officers}`, inline: true },
+          { name: "Founded", value: `<t:${foundedTs}:D> (<t:${foundedTs}:R>)` }
+        )
+        .setFooter({ text: `Faction ID: ${faction.id}` })
+        .setTimestamp();
 
-      await interaction.reply({ embeds: [embed] });
+      return interaction.reply({ embeds: [embed] });
     }
 
+    // ── MEMBERS ────────────────────────────────────────────────────────────
     if (subcommand === "members") {
       const factionName = options.getString("faction", true);
       const faction = await storage.getFactionByName(factionName);
 
       if (!faction) {
-        return interaction.reply("❌ Faction not found.");
+        return interaction.reply({ content: "❌ Faction not found.", flags: [MessageFlags.Ephemeral] });
       }
 
       const members = await storage.getFactionMembers(faction.id);
       if (members.length === 0) {
-        return interaction.reply("❌ No members in this faction.");
+        return interaction.reply({ content: "❌ No members in this faction.", flags: [MessageFlags.Ephemeral] });
       }
 
-      const memberList = members
-        .map(
-          (m) =>
-            `**${m.username}** - ${m.rank} (${m.kills} kills, ${m.deaths} deaths)`
-        )
+      const rankOrder: Record<string, number> = { leader: 0, officer: 1, member: 2 };
+      const sorted = [...members].sort((a, b) => (rankOrder[a.rank] ?? 9) - (rankOrder[b.rank] ?? 9));
+
+      const rankEmoji: Record<string, string> = { leader: "👑", officer: "⭐", member: "🔹" };
+      const memberList = sorted
+        .map((m) => `${rankEmoji[m.rank] ?? "🔹"} **${m.username}** — ${m.rank} | ${m.kills}K / ${m.deaths}D`)
         .join("\n");
 
       const embed = new EmbedBuilder()
         .setColor(faction.color as any)
-        .setTitle(`${faction.name} Members (${members.length})`)
-        .setDescription(memberList);
+        .setTitle(`🏴 ${faction.name} [${faction.tag}] — Members (${members.length})`)
+        .setDescription(memberList)
+        .setFooter({ text: `K = Kills  •  D = Deaths` })
+        .setTimestamp();
 
-      await interaction.reply({ embeds: [embed] });
+      return interaction.reply({ embeds: [embed] });
     }
 
+    // ── LEADERBOARD ────────────────────────────────────────────────────────
     if (subcommand === "leaderboard") {
-      const factions = await storage.getTopFactions(10);
+      const topFactions = await storage.getTopFactions(10);
 
-      if (factions.length === 0) {
-        return interaction.reply("❌ No factions found.");
+      if (topFactions.length === 0) {
+        return interaction.reply({ content: "❌ No factions have been created yet.", flags: [MessageFlags.Ephemeral] });
       }
 
-      const leaderboard = factions
-        .map((f, i) => `**${i + 1}.** ${f.name} [${f.tag}] - ${f.kills} kills`)
+      const medals = ["🥇", "🥈", "🥉"];
+      const leaderboard = topFactions
+        .map((f, i) => `${medals[i] ?? `**${i + 1}.**`} ${f.name} [${f.tag}] — **${f.kills} kills**`)
         .join("\n");
 
       const embed = new EmbedBuilder()
         .setColor(0xffd700)
         .setTitle("🏆 Faction Leaderboard")
-        .setDescription(leaderboard);
+        .setDescription(leaderboard)
+        .setFooter({ text: `${topFactions.length} factions ranked by total kills` })
+        .setTimestamp();
 
-      await interaction.reply({ embeds: [embed] });
+      return interaction.reply({ embeds: [embed] });
     }
   }
 
