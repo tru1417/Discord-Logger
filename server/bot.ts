@@ -16,11 +16,36 @@ import {
   MessageFlags,
   AttachmentBuilder,
   TextChannel,
+  Guild,
 } from "discord.js";
 import { storage } from "./storage";
 import { OpenAI } from "openai";
 import { createCanvas, loadImage } from "canvas";
 import { getRconStatus, getServerStatus, sayGlobal } from "./rcon";
+import {
+  getFivemServerStatus,
+  getTxAdminStatus,
+  runFivemConsoleCommand,
+  fivemSay,
+  fivemKick,
+  fivemBan,
+} from "./fivem";
+
+/**
+ * Build an embed pre-decorated with the Discord server's identity.
+ * Adds: author = guild name + icon, thumbnail = guild icon, footer with icon,
+ * timestamp. Callers can still override any of these afterwards.
+ */
+function serverEmbed(guild: Guild | null | undefined): EmbedBuilder {
+  const e = new EmbedBuilder().setTimestamp();
+  if (guild) {
+    const icon = guild.iconURL({ size: 256 }) || undefined;
+    e.setAuthor({ name: guild.name, iconURL: icon });
+    if (icon) e.setThumbnail(icon);
+    e.setFooter({ text: guild.name, iconURL: icon });
+  }
+  return e;
+}
 
 let client: Client | null = null;
 let openai: OpenAI | null = null;
@@ -259,9 +284,9 @@ export function initializeBot() {
                   .join("\n");
               }
 
-              const embed = new EmbedBuilder()
+              const embed = serverEmbed(interaction.guild)
                 .setColor(0xff4d6d)
-                .setTitle("📜 Command Logger")
+                .setTitle("📜 Command Executed")
                 .addFields(
                   { name: "User", value: `${user.tag}`, inline: true },
                   { name: "User ID", value: `${user.id}`, inline: true },
@@ -776,6 +801,64 @@ async function registerSlashCommands(clientId: string, guildId: string) {
         sub
           .setName("leaderboard")
           .setDescription("View top factions by kills")
+      ),
+    new SlashCommandBuilder()
+      .setName("fivem")
+      .setDescription("FiveM / RedM server management via txAdmin")
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+      .addSubcommand((sub) =>
+        sub
+          .setName("status")
+          .setDescription("Check live FiveM server status, players, and txAdmin link")
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("players")
+          .setDescription("List every player currently connected to the FiveM server")
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("say")
+          .setDescription("Broadcast a chat message to every player in-game")
+          .addStringOption((opt) =>
+            opt.setName("message").setDescription("Message to broadcast").setRequired(true)
+          )
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("console")
+          .setDescription("Run a raw FXServer console command (admin only)")
+          .addStringOption((opt) =>
+            opt.setName("command").setDescription("Console command to execute").setRequired(true)
+          )
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("kick")
+          .setDescription("Kick a player from the FiveM server by their ID")
+          .addIntegerOption((opt) =>
+            opt.setName("id").setDescription("Player server ID (from /fivem players)").setRequired(true)
+          )
+          .addStringOption((opt) =>
+            opt.setName("reason").setDescription("Reason for the kick").setRequired(false)
+          )
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("ban")
+          .setDescription("Ban a player from the FiveM server by their ID")
+          .addIntegerOption((opt) =>
+            opt.setName("id").setDescription("Player server ID").setRequired(true)
+          )
+          .addStringOption((opt) =>
+            opt.setName("reason").setDescription("Reason for the ban").setRequired(false)
+          )
+          .addIntegerOption((opt) =>
+            opt
+              .setName("duration_hours")
+              .setDescription("Ban length in hours (omit for permanent)")
+              .setRequired(false)
+          )
       ),
     new SlashCommandBuilder()
       .setName("dayz")
@@ -1299,6 +1382,20 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
         return interaction.reply({ content: "❌ Faction not found.", flags: [MessageFlags.Ephemeral] });
       }
 
+      // ── PRIVACY ──────────────────────────────────────────────────────────
+      // Only members of this faction (or admins) may view its info.
+      const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false;
+      if (!isAdmin) {
+        const callerMember = await storage.getFactionMember(user.id);
+        const inThisFaction = callerMember?.factionId === faction.id;
+        if (!inThisFaction) {
+          return interaction.reply({
+            content: "🔒 Faction intel is classified — you must be a member of this faction (or a server admin) to view it.",
+            flags: [MessageFlags.Ephemeral],
+          });
+        }
+      }
+
       const members = await storage.getFactionMembers(faction.id);
       const officers = members.filter((m) => m.rank === "officer").length;
       const statusEmoji = faction.status === "active" ? "🟢" : "🔴";
@@ -1330,6 +1427,19 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
       if (!faction) {
         return interaction.reply({ content: "❌ Faction not found.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      // ── PRIVACY ──────────────────────────────────────────────────────────
+      const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false;
+      if (!isAdmin) {
+        const callerMember = await storage.getFactionMember(user.id);
+        const inThisFaction = callerMember?.factionId === faction.id;
+        if (!inThisFaction) {
+          return interaction.reply({
+            content: "🔒 Roster locked — only members of this faction (or admins) may view it.",
+            flags: [MessageFlags.Ephemeral],
+          });
+        }
       }
 
       const members = await storage.getFactionMembers(faction.id);
@@ -1618,6 +1728,222 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
         return interaction.editReply({ embeds: [embed] });
       } catch (err: any) {
         return interaction.editReply({ content: `❌ Failed to send: ${err.message}` });
+      }
+    }
+  }
+
+  if (commandName === "fivem") {
+    const subcommand = options.getSubcommand();
+
+    // ── STATUS ─────────────────────────────────────────────────────────────
+    if (subcommand === "status") {
+      await interaction.deferReply();
+
+      const [server, tx] = await Promise.all([
+        getFivemServerStatus(),
+        getTxAdminStatus(),
+      ]);
+
+      const txLine =
+        tx.status === "connected"
+          ? `🟢 Connected to \`${tx.url}\``
+          : tx.status === "disconnected"
+            ? `🔴 Offline — ${tx.error}`
+            : "⚪ Not configured";
+
+      const embed = serverEmbed(guild)
+        .setColor(server.online ? 0x00d26a : 0xff2d55)
+        .setTitle(server.online ? "🟢 FIVEM SERVER — ONLINE" : "🔴 FIVEM SERVER — OFFLINE")
+        .setDescription(
+          server.online
+            ? `**${server.hostname}**\nLocked, loaded, and live. ${server.players}/${server.maxPlayers} operatives in the field.`
+            : `**Server unreachable.** ${server.error || "No response."}`
+        )
+        .addFields(
+          { name: "👥 Players", value: `**${server.players}** / ${server.maxPlayers}`, inline: true },
+          { name: "🗺️ Map", value: server.mapname || "—", inline: true },
+          { name: "🎮 Gametype", value: server.gametype || "—", inline: true },
+          { name: "📦 Resources", value: `${server.resources.length} loaded`, inline: true },
+          { name: "🛠️ txAdmin", value: txLine, inline: false }
+        );
+
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    // ── PLAYERS ────────────────────────────────────────────────────────────
+    if (subcommand === "players") {
+      await interaction.deferReply();
+      const server = await getFivemServerStatus();
+
+      if (!server.online) {
+        return interaction.editReply({
+          embeds: [
+            serverEmbed(guild)
+              .setColor(0xff2d55)
+              .setTitle("🔴 SERVER OFFLINE")
+              .setDescription(server.error || "Server is not reachable."),
+          ],
+        });
+      }
+
+      const list =
+        server.playerList.length > 0
+          ? server.playerList
+              .map((p) => `\`#${String(p.id).padStart(2, "0")}\` **${p.name}** — ${p.ping}ms`)
+              .join("\n")
+          : "_No players currently connected._";
+
+      const embed = serverEmbed(guild)
+        .setColor(0x0099ff)
+        .setTitle(`👥 ACTIVE OPERATIVES — ${server.players}/${server.maxPlayers}`)
+        .setDescription(list.substring(0, 4000));
+
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    // ── SAY (broadcast) ────────────────────────────────────────────────────
+    if (subcommand === "say") {
+      const message = options.getString("message", true);
+      await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+      try {
+        await fivemSay(message);
+        await storage.createLog({
+          type: "fivem_say",
+          content: `${user.tag} broadcast in FiveM: ${message}`,
+          userId: user.id,
+          username: user.tag,
+          metadata: { message },
+        });
+
+        const embed = serverEmbed(guild)
+          .setColor(0x00d26a)
+          .setTitle("📢 BROADCAST DELIVERED")
+          .setDescription(`Message pushed to every connected operative.`)
+          .addFields(
+            { name: "📡 Message", value: `> ${message}` },
+            { name: "🎙️ Sent By", value: `<@${user.id}>`, inline: true }
+          );
+
+        return interaction.editReply({ embeds: [embed] });
+      } catch (err: any) {
+        return interaction.editReply({ content: `❌ Broadcast failed: ${err.message}` });
+      }
+    }
+
+    // ── CONSOLE ────────────────────────────────────────────────────────────
+    if (subcommand === "console") {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({
+          content: "❌ Only administrators may execute raw console commands.",
+          flags: [MessageFlags.Ephemeral],
+        });
+      }
+
+      const command = options.getString("command", true);
+      await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+      try {
+        await runFivemConsoleCommand(command);
+        await storage.createLog({
+          type: "fivem_console",
+          content: `${user.tag} ran FiveM console command: ${command}`,
+          userId: user.id,
+          username: user.tag,
+          metadata: { command },
+        });
+
+        const embed = serverEmbed(guild)
+          .setColor(0xffd60a)
+          .setTitle("⚡ CONSOLE COMMAND DISPATCHED")
+          .addFields(
+            { name: "📟 Command", value: `\`\`\`${command.substring(0, 1000)}\`\`\`` },
+            { name: "👤 Executed By", value: `<@${user.id}>`, inline: true }
+          )
+          .setFooter({ text: `${guild.name} • Output is shown in the live txAdmin console`, iconURL: guild.iconURL({ size: 256 }) || undefined });
+
+        return interaction.editReply({ embeds: [embed] });
+      } catch (err: any) {
+        return interaction.editReply({ content: `❌ Console command failed: ${err.message}` });
+      }
+    }
+
+    // ── KICK ───────────────────────────────────────────────────────────────
+    if (subcommand === "kick") {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.KickMembers)) {
+        return interaction.reply({
+          content: "❌ You need the Kick Members permission.",
+          flags: [MessageFlags.Ephemeral],
+        });
+      }
+
+      const playerId = options.getInteger("id", true);
+      const reason = options.getString("reason") || "No reason provided";
+      await interaction.deferReply();
+
+      try {
+        await fivemKick(playerId, reason);
+        await storage.createLog({
+          type: "fivem_kick",
+          content: `${user.tag} kicked FiveM player #${playerId}: ${reason}`,
+          userId: user.id,
+          username: user.tag,
+          metadata: { playerId, reason },
+        });
+
+        const embed = serverEmbed(guild)
+          .setColor(0xff8c00)
+          .setTitle(`👢 PLAYER KICKED — #${playerId}`)
+          .setDescription(`Operative **#${playerId}** has been ejected from the server.`)
+          .addFields(
+            { name: "🛡️ Moderator", value: `<@${user.id}>`, inline: true },
+            { name: "📝 Reason", value: reason, inline: false }
+          );
+
+        return interaction.editReply({ embeds: [embed] });
+      } catch (err: any) {
+        return interaction.editReply({ content: `❌ Kick failed: ${err.message}` });
+      }
+    }
+
+    // ── BAN ────────────────────────────────────────────────────────────────
+    if (subcommand === "ban") {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.BanMembers)) {
+        return interaction.reply({
+          content: "❌ You need the Ban Members permission.",
+          flags: [MessageFlags.Ephemeral],
+        });
+      }
+
+      const playerId = options.getInteger("id", true);
+      const reason = options.getString("reason") || "No reason provided";
+      const durationHours = options.getInteger("duration_hours");
+      const durationSec = durationHours && durationHours > 0 ? durationHours * 3600 : undefined;
+      await interaction.deferReply();
+
+      try {
+        await fivemBan(playerId, reason, durationSec);
+        await storage.createLog({
+          type: "fivem_ban",
+          content: `${user.tag} banned FiveM player #${playerId} (${durationHours ? durationHours + "h" : "perm"}): ${reason}`,
+          userId: user.id,
+          username: user.tag,
+          metadata: { playerId, reason, durationHours },
+        });
+
+        const embed = serverEmbed(guild)
+          .setColor(0xb91c1c)
+          .setTitle(`🔨 PLAYER BANNED — #${playerId}`)
+          .setDescription(`The hammer has dropped on operative **#${playerId}**.`)
+          .addFields(
+            { name: "🛡️ Moderator", value: `<@${user.id}>`, inline: true },
+            { name: "⏳ Duration", value: durationHours ? `${durationHours} hour${durationHours !== 1 ? "s" : ""}` : "Permanent", inline: true },
+            { name: "📝 Reason", value: reason, inline: false }
+          );
+
+        return interaction.editReply({ embeds: [embed] });
+      } catch (err: any) {
+        return interaction.editReply({ content: `❌ Ban failed: ${err.message}` });
       }
     }
   }
