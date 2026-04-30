@@ -1173,6 +1173,160 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
     }
   }
 
+  // ── /syncroles ────────────────────────────────────────────────────────────
+  // Reads every member's current Discord roles, diffs against the database,
+  // and only records what actually changed:
+  //   • ADDED     — present in Discord, missing in DB
+  //   • REMOVED   — present in DB, missing in Discord (role was taken away)
+  //   • UNCHANGED — present in both → silently skipped (auto-recognized)
+  if (commandName === "syncroles") {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({
+        content: "❌ Administrator permission required.",
+        flags: [MessageFlags.Ephemeral],
+      });
+    }
+
+    await interaction.deferReply();
+
+    try {
+      // ── Snapshot of Discord (source of truth) ────────────────────────────
+      const allMembers = await guild.members.fetch();
+      const everyoneId = guild.id;
+
+      // Map<roleId, { name, members: Map<userId, username> }>
+      const discordSnapshot = new Map<string, { name: string; members: Map<string, string> }>();
+      let humansScanned = 0;
+      let botsSkipped = 0;
+
+      for (const [, gm] of allMembers) {
+        if (gm.user.bot) {
+          botsSkipped++;
+          continue;
+        }
+        humansScanned++;
+        for (const [, role] of gm.roles.cache) {
+          if (role.id === everyoneId) continue;
+          let bucket = discordSnapshot.get(role.id);
+          if (!bucket) {
+            bucket = { name: role.name, members: new Map() };
+            discordSnapshot.set(role.id, bucket);
+          }
+          bucket.members.set(gm.id, gm.user.tag);
+        }
+      }
+
+      // ── Snapshot of database ──────────────────────────────────────────────
+      const dbEntries = await storage.getRoleListMembers();
+      // Map<roleId, Set<userId>>
+      const dbSnapshot = new Map<string, Set<string>>();
+      for (const e of dbEntries) {
+        let set = dbSnapshot.get(e.roleId);
+        if (!set) {
+          set = new Set();
+          dbSnapshot.set(e.roleId, set);
+        }
+        set.add(e.userId);
+      }
+
+      // ── Diff ──────────────────────────────────────────────────────────────
+      let added = 0;
+      let removed = 0;
+      let unchanged = 0;
+      const rolesTouched = new Set<string>();
+      const rolesActuallyChanged = new Set<string>();
+
+      // ADDS + UNCHANGED
+      for (const [roleId, bucket] of discordSnapshot) {
+        rolesTouched.add(roleId);
+        const dbSet = dbSnapshot.get(roleId) ?? new Set<string>();
+
+        for (const [userId, username] of bucket.members) {
+          if (dbSet.has(userId)) {
+            unchanged++;
+          } else {
+            await storage.addRoleListMember({
+              roleId,
+              roleName: bucket.name,
+              userId,
+              username,
+              addedById: client!.user!.id,
+              addedByName: client!.user!.tag,
+              action: "add",
+            });
+            added++;
+            rolesActuallyChanged.add(roleId);
+          }
+        }
+      }
+
+      // REMOVES — anyone in DB whose role assignment is no longer in Discord
+      for (const [roleId, dbUserIds] of dbSnapshot) {
+        rolesTouched.add(roleId);
+        const liveSet = discordSnapshot.get(roleId)?.members ?? new Map<string, string>();
+        for (const userId of dbUserIds) {
+          if (!liveSet.has(userId)) {
+            await storage.removeRoleListMember(roleId, userId);
+            removed++;
+            rolesActuallyChanged.add(roleId);
+          }
+        }
+      }
+
+      // ── Audit log entry (only if something actually changed) ──────────────
+      if (added > 0 || removed > 0) {
+        await storage.createLog({
+          type: "role_sync",
+          content: `${user.tag} ran /syncroles → +${added} / -${removed} / =${unchanged}`,
+          userId: user.id,
+          username: user.tag,
+          metadata: { added, removed, unchanged, humansScanned, botsSkipped },
+        });
+      }
+
+      // ── Embed ─────────────────────────────────────────────────────────────
+      const isClean = added === 0 && removed === 0;
+      const embed = serverEmbed(guild)
+        .setColor(isClean ? 0x57f287 : 0x5865f2)
+        .setTitle(isClean ? "✅ Role Sync — Already In Sync" : "🔄 Role Sync Complete")
+        .setDescription(
+          isClean
+            ? "Every Discord role assignment already matches the database. **No changes needed.**"
+            : "Discord and the database have been reconciled."
+        )
+        .addFields(
+          { name: "👥 Humans Scanned", value: `**${humansScanned}**`, inline: true },
+          { name: "🤖 Bots Skipped", value: `**${botsSkipped}**`, inline: true },
+          { name: "🎭 Roles Touched", value: `**${rolesTouched.size}**`, inline: true },
+          { name: "➕ Added to DB", value: `**${added}**`, inline: true },
+          { name: "➖ Removed from DB", value: `**${removed}**`, inline: true },
+          { name: "✓ Unchanged", value: `**${unchanged}**`, inline: true }
+        );
+
+      if (rolesActuallyChanged.size > 0 && rolesActuallyChanged.size <= 15) {
+        const changedNames = [...rolesActuallyChanged]
+          .map((rid) => {
+            const r = guild.roles.cache.get(rid);
+            return r ? `<@&${rid}>` : `\`${rid}\``;
+          })
+          .join(" • ");
+        embed.addFields({ name: "🛠️ Roles With Changes", value: changedNames });
+      }
+
+      embed.setFooter({
+        text: `${guild.name} • Synced by ${user.tag}`,
+        iconURL: guild.iconURL({ size: 256 }) || undefined,
+      });
+
+      return interaction.editReply({ embeds: [embed] });
+    } catch (err: any) {
+      console.error("[syncroles] Error:", err);
+      return interaction.editReply({
+        content: `❌ Role sync failed: ${err?.message || "unknown error"}. Make sure I have the **Server Members Intent** enabled in the Discord Developer Portal.`,
+      });
+    }
+  }
+
   if (commandName === "faction") {
     const subcommand = options.getSubcommand();
 
