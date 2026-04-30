@@ -77,6 +77,9 @@ export const factions = pgTable("factions", {
   hq: text("hq").default("Unknown").notNull(),
   kills: integer("kills").default(0).notNull(),
   status: text("status").default("active").notNull(),
+  categoryId: text("category_id"),
+  chatChannelId: text("chat_channel_id"),
+  voiceChannelId: text("voice_channel_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

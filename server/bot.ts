@@ -17,7 +17,11 @@ import {
   AttachmentBuilder,
   TextChannel,
   Guild,
+  ChannelType,
+  CategoryChannel,
+  OverwriteType,
 } from "discord.js";
+import type { Faction } from "@shared/schema";
 import { storage } from "./storage";
 import { OpenAI } from "openai";
 import { createCanvas, loadImage } from "canvas";
@@ -45,6 +49,175 @@ function serverEmbed(guild: Guild | null | undefined): EmbedBuilder {
     e.setFooter({ text: guild.name, iconURL: icon });
   }
   return e;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Faction Discord channel management
+// ─────────────────────────────────────────────────────────────────────────────
+
+const FACTIONS_CATEGORY_NAME = "🏴 FACTIONS";
+
+/**
+ * Find or create the shared parent "🏴 FACTIONS" category that holds every
+ * faction's channel pair. Hidden from @everyone by default.
+ */
+async function ensureFactionsParentCategory(guild: Guild): Promise<CategoryChannel> {
+  const existing = guild.channels.cache.find(
+    (c) => c.type === ChannelType.GuildCategory && c.name === FACTIONS_CATEGORY_NAME
+  ) as CategoryChannel | undefined;
+  if (existing) return existing;
+
+  return await guild.channels.create({
+    name: FACTIONS_CATEGORY_NAME,
+    type: ChannelType.GuildCategory,
+    permissionOverwrites: [
+      {
+        id: guild.roles.everyone.id,
+        deny: [PermissionFlagsBits.ViewChannel],
+      },
+    ],
+  });
+}
+
+/**
+ * Build a private chat + voice channel pair for a faction. Only the leader
+ * (and @everyone-deny) is configured here; additional members are granted
+ * access individually via `addMemberToFactionChannels`.
+ */
+async function createFactionChannels(
+  guild: Guild,
+  faction: Faction,
+  leaderId: string
+): Promise<{ chatChannelId: string; voiceChannelId: string; categoryId: string }> {
+  const parent = await ensureFactionsParentCategory(guild);
+
+  // Slugify name for channel name (Discord disallows spaces/uppercase in text channels)
+  const slug = `${faction.tag}-${faction.name}`
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 90);
+
+  const baseOverwrites = [
+    {
+      id: guild.roles.everyone.id,
+      deny: [PermissionFlagsBits.ViewChannel],
+      type: OverwriteType.Role,
+    },
+    {
+      id: leaderId,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.Connect,
+        PermissionFlagsBits.Speak,
+        PermissionFlagsBits.ManageMessages,
+      ],
+      type: OverwriteType.Member,
+    },
+  ];
+
+  const chat = await guild.channels.create({
+    name: `${slug}-chat`,
+    type: ChannelType.GuildText,
+    parent: parent.id,
+    topic: `Private channel for faction ${faction.name} [${faction.tag}]`,
+    permissionOverwrites: baseOverwrites,
+  });
+
+  const voice = await guild.channels.create({
+    name: `🔊 ${faction.tag} Voice`,
+    type: ChannelType.GuildVoice,
+    parent: parent.id,
+    permissionOverwrites: baseOverwrites,
+  });
+
+  return { chatChannelId: chat.id, voiceChannelId: voice.id, categoryId: parent.id };
+}
+
+/** Delete the chat + voice channels owned by this faction (best-effort). */
+async function deleteFactionChannels(guild: Guild, faction: Faction): Promise<void> {
+  for (const channelId of [faction.chatChannelId, faction.voiceChannelId]) {
+    if (!channelId) continue;
+    const channel = guild.channels.cache.get(channelId);
+    if (channel) {
+      await channel.delete(`Faction ${faction.name} cleanup`).catch((e) => {
+        console.error(`[faction] Failed to delete channel ${channelId}:`, e?.message);
+      });
+    }
+  }
+}
+
+/** Grant a member view + speak access to the faction's chat & voice channels. */
+async function addMemberToFactionChannels(
+  guild: Guild,
+  faction: Faction,
+  userId: string
+): Promise<void> {
+  const allow = [
+    PermissionFlagsBits.ViewChannel,
+    PermissionFlagsBits.SendMessages,
+    PermissionFlagsBits.Connect,
+    PermissionFlagsBits.Speak,
+  ];
+  for (const channelId of [faction.chatChannelId, faction.voiceChannelId]) {
+    if (!channelId) continue;
+    const channel = guild.channels.cache.get(channelId);
+    if (channel && "permissionOverwrites" in channel) {
+      await channel.permissionOverwrites
+        .edit(userId, {
+          ViewChannel: true,
+          SendMessages: true,
+          Connect: true,
+          Speak: true,
+        })
+        .catch((e) =>
+          console.error(`[faction] Failed to grant ${userId} on ${channelId}:`, e?.message)
+        );
+    }
+  }
+  void allow; // satisfy linter
+}
+
+/** Strip a member from the faction's chat & voice channels. */
+async function removeMemberFromFactionChannels(
+  guild: Guild,
+  faction: Faction,
+  userId: string
+): Promise<void> {
+  for (const channelId of [faction.chatChannelId, faction.voiceChannelId]) {
+    if (!channelId) continue;
+    const channel = guild.channels.cache.get(channelId);
+    if (channel && "permissionOverwrites" in channel) {
+      await channel.permissionOverwrites
+        .delete(userId, "Removed from faction")
+        .catch((e) =>
+          console.error(`[faction] Failed to revoke ${userId} on ${channelId}:`, e?.message)
+        );
+    }
+  }
+}
+
+/**
+ * If the faction has zero remaining members, tear down its channels and
+ * delete the faction record. Returns `true` when cleanup occurred.
+ */
+async function cleanupFactionIfEmpty(guild: Guild, faction: Faction): Promise<boolean> {
+  const remaining = await storage.getFactionMembers(faction.id);
+  if (remaining.length > 0) return false;
+
+  await deleteFactionChannels(guild, faction);
+  await storage.deleteFaction(faction.id);
+
+  await storage.createLog({
+    type: "faction_auto_disband",
+    content: `Faction ${faction.name} [${faction.tag}] auto-disbanded — last member left`,
+    userId: client?.user?.id || "system",
+    username: client?.user?.tag || "system",
+    metadata: { factionId: faction.id, factionName: faction.name, tag: faction.tag },
+  });
+
+  return true;
 }
 
 let client: Client | null = null;
@@ -777,6 +950,11 @@ async function registerSlashCommands(clientId: string, guildId: string) {
       )
       .addSubcommand((sub) =>
         sub
+          .setName("disband")
+          .setDescription("(Leader only) Permanently destroy your faction and its channels")
+      )
+      .addSubcommand((sub) =>
+        sub
           .setName("promote")
           .setDescription("Promote a faction member to officer")
           .addUserOption((opt) =>
@@ -1355,7 +1533,9 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
         return interaction.reply({ content: `❌ You are already in **${existingMembership.name}**. Leave it first.`, flags: [MessageFlags.Ephemeral] });
       }
 
-      const faction = await storage.createFaction({
+      await interaction.deferReply();
+
+      let faction = await storage.createFaction({
         name,
         tag,
         leaderId: user.id,
@@ -1369,31 +1549,43 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
       await storage.addFactionMember(faction.id, user.id, user.username, "leader");
 
+      // ── Carve out the faction's private chat + voice channels ────────────
+      let channelInfo: { chatChannelId: string; voiceChannelId: string; categoryId: string } | null = null;
+      try {
+        channelInfo = await createFactionChannels(guild, faction, user.id);
+        await storage.updateFactionStats(faction.id, channelInfo);
+        faction = { ...faction, ...channelInfo };
+      } catch (err: any) {
+        console.error("[faction.create] channel creation failed:", err?.message);
+      }
+
       await storage.createLog({
         type: "faction_create",
         content: `${user.tag} created faction ${name} [${tag}]`,
         userId: user.id,
         username: user.tag,
-        metadata: { factionId: faction.id, factionName: name, tag },
+        metadata: { factionId: faction.id, factionName: name, tag, ...channelInfo },
       });
 
-      const embed = new EmbedBuilder()
+      const embed = serverEmbed(guild)
         .setColor(0x5865f2)
-        .setTitle(`🏴 Faction Created: ${name} [${tag}]`)
-        .setDescription("Your faction is now active. Use `/faction invite` to recruit members.")
-        .addFields(
-          { name: "Leader", value: `<@${user.id}>`, inline: true },
-          { name: "Tag", value: `[${tag}]`, inline: true },
-          { name: "Status", value: "🟢 Active", inline: true },
-          { name: "Kills", value: "0", inline: true },
-          { name: "Members", value: "1", inline: true },
-          { name: "HQ", value: "Unknown", inline: true },
-          { name: "Description", value: "No description set." }
+        .setTitle(`🏴 FACTION FORGED — ${name} [${tag}]`)
+        .setDescription(
+          channelInfo
+            ? `**${name}** is locked, loaded, and live.\nYour private war room is ready: <#${channelInfo.chatChannelId}> • <#${channelInfo.voiceChannelId}>`
+            : `**${name}** is now active. Use \`/faction invite\` to recruit members.\n⚠️ Could not create faction channels — check that I have **Manage Channels** permission.`
         )
-        .setFooter({ text: `Faction ID: ${faction.id} • Created by ${user.tag}` })
-        .setTimestamp();
+        .addFields(
+          { name: "👑 Leader", value: `<@${user.id}>`, inline: true },
+          { name: "🏷️ Tag", value: `[${tag}]`, inline: true },
+          { name: "📡 Status", value: "🟢 Active", inline: true },
+          { name: "💀 Kills", value: "0", inline: true },
+          { name: "👥 Members", value: "1", inline: true },
+          { name: "🏚️ HQ", value: "Unknown", inline: true }
+        )
+        .setFooter({ text: `Faction ID: ${faction.id} • Forged by ${user.tag}` });
 
-      return interaction.reply({ embeds: [embed] });
+      return interaction.editReply({ embeds: [embed] });
     }
 
     // ── INVITE ─────────────────────────────────────────────────────────────
@@ -1423,6 +1615,9 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       }
 
       await storage.addFactionMember(callerFaction.id, target.id, target.username, "member");
+
+      // ── Grant access to faction channels ─────────────────────────────────
+      await addMemberToFactionChannels(guild, callerFaction, target.id);
 
       await storage.createLog({
         type: "faction_invite",
@@ -1474,6 +1669,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
       }
 
       await storage.removeFactionMember(callerFaction.id, target.id);
+      await removeMemberFromFactionChannels(guild, callerFaction, target.id);
 
       await storage.createLog({
         type: "faction_kick",
@@ -1483,15 +1679,21 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
         metadata: { factionId: callerFaction.id, targetId: target.id },
       });
 
-      const embed = new EmbedBuilder()
+      // ── Auto-disband if the faction is now empty ─────────────────────────
+      const wasCleanedUp = await cleanupFactionIfEmpty(guild, callerFaction);
+
+      const embed = serverEmbed(guild)
         .setColor(0xff6b00)
         .setTitle(`👢 Member Removed — ${callerFaction.name} [${callerFaction.tag}]`)
-        .setDescription(`<@${target.id}> has been removed from the faction.`)
-        .addFields(
-          { name: "Removed By", value: `<@${user.id}>`, inline: true },
-          { name: "Member", value: `${target.tag}`, inline: true }
+        .setDescription(
+          wasCleanedUp
+            ? `<@${target.id}> has been removed from the faction.\n\n💥 **Faction auto-disbanded** — last member is gone, all channels destroyed.`
+            : `<@${target.id}> has been removed from the faction.`
         )
-        .setTimestamp();
+        .addFields(
+          { name: "🛡️ Removed By", value: `<@${user.id}>`, inline: true },
+          { name: "👤 Member", value: `${target.tag}`, inline: true }
+        );
 
       return interaction.reply({ embeds: [embed] });
     }
@@ -1505,10 +1707,14 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
 
       const callerMember = await storage.getFactionMember(user.id);
       if (callerMember?.rank === "leader") {
-        return interaction.reply({ content: "❌ Leaders cannot leave — transfer leadership or disband the faction first.", flags: [MessageFlags.Ephemeral] });
+        return interaction.reply({
+          content: "❌ Leaders cannot leave — use `/faction disband` to destroy the faction, or transfer leadership first.",
+          flags: [MessageFlags.Ephemeral],
+        });
       }
 
       await storage.removeFactionMember(callerFaction.id, user.id);
+      await removeMemberFromFactionChannels(guild, callerFaction, user.id);
 
       await storage.createLog({
         type: "faction_leave",
@@ -1518,13 +1724,62 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
         metadata: { factionId: callerFaction.id },
       });
 
-      const embed = new EmbedBuilder()
+      // ── Auto-disband if the faction is now empty ─────────────────────────
+      const wasCleanedUp = await cleanupFactionIfEmpty(guild, callerFaction);
+
+      const embed = serverEmbed(guild)
         .setColor(0x99aab5)
         .setTitle(`🚪 Left Faction — ${callerFaction.name}`)
-        .setDescription(`You have left **${callerFaction.name} [${callerFaction.tag}]**.`)
-        .setTimestamp();
+        .setDescription(
+          wasCleanedUp
+            ? `You have left **${callerFaction.name} [${callerFaction.tag}]**.\n\n💥 **Faction auto-disbanded** — you were the last member, all channels destroyed.`
+            : `You have left **${callerFaction.name} [${callerFaction.tag}]**.`
+        );
 
       return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+    }
+
+    // ── DISBAND (leader-only manual delete) ────────────────────────────────
+    if (subcommand === "disband") {
+      const callerFaction = await storage.getFactionByMember(user.id);
+      if (!callerFaction) {
+        return interaction.reply({ content: "❌ You are not in a faction.", flags: [MessageFlags.Ephemeral] });
+      }
+
+      const callerMember = await storage.getFactionMember(user.id);
+      if (callerMember?.rank !== "leader") {
+        return interaction.reply({
+          content: "❌ Only the faction leader can disband the faction.",
+          flags: [MessageFlags.Ephemeral],
+        });
+      }
+
+      await interaction.deferReply();
+
+      const allMembers = await storage.getFactionMembers(callerFaction.id);
+      for (const m of allMembers) {
+        await storage.removeFactionMember(callerFaction.id, m.userId);
+      }
+      await deleteFactionChannels(guild, callerFaction);
+      await storage.deleteFaction(callerFaction.id);
+
+      await storage.createLog({
+        type: "faction_disband",
+        content: `${user.tag} disbanded faction ${callerFaction.name} [${callerFaction.tag}]`,
+        userId: user.id,
+        username: user.tag,
+        metadata: { factionId: callerFaction.id, factionName: callerFaction.name, memberCount: allMembers.length },
+      });
+
+      const embed = serverEmbed(guild)
+        .setColor(0xb91c1c)
+        .setTitle(`💥 FACTION DISBANDED — ${callerFaction.name} [${callerFaction.tag}]`)
+        .setDescription(
+          `The banner has fallen. **${callerFaction.name}** is no more.\nAll channels destroyed, all ${allMembers.length} member${allMembers.length !== 1 ? "s" : ""} released.`
+        )
+        .addFields({ name: "🛡️ Disbanded By", value: `<@${user.id}>`, inline: true });
+
+      return interaction.editReply({ embeds: [embed] });
     }
 
     // ── INFO ───────────────────────────────────────────────────────────────
